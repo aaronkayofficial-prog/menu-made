@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exaContents } from '@/lib/exa';
-import { claudeJSON } from '@/lib/anthropic';
+import { claudeJSON, claudeJSONWithImages } from '@/lib/anthropic';
 import { EXTRACT_SYSTEM_PROMPT, PROMPT_VERSION } from '@/lib/prompts';
 import { ExtractedMenu } from '@/lib/schema';
 
 export const runtime = 'nodejs';
-export const maxDuration = 90;
+export const maxDuration = 120;
 
 // Patterns for paths that likely contain menu content
 const MENU_PATH_PATTERNS = [
@@ -34,7 +34,7 @@ const CITY_HINTS = [
   'tokyo', 'osaka', 'hong-kong', 'singapore', 'bangkok',
   'new-york', 'nyc', 'manhattan', 'brooklyn', 'la', 'los-angeles',
   'chicago', 'sf', 'san-francisco', 'miami', 'boston', 'seattle',
-  'mexico-city', 'cdmx', 'cmx', 'toronto',
+  'mexico-city', 'cdmx', 'cmx', 'toronto', 'katy', 'pearland',
 ];
 
 async function rawFetch(url: string): Promise<string> {
@@ -44,8 +44,7 @@ async function rawFetch(url: string): Promise<string> {
         'User-Agent':
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
           '(KHTML, like Gecko) Chrome/120.0 Safari/537.36',
-        'Accept':
-          'text/html,application/xhtml+xml,application/pdf,*/*;q=0.9',
+        Accept: 'text/html,application/xhtml+xml,application/pdf,*/*;q=0.9',
         'Accept-Language': 'en-AU,en-US;q=0.9,en;q=0.8',
       },
       signal: AbortSignal.timeout(8000),
@@ -130,6 +129,93 @@ function commonMenuUrls(baseUrl: string): string[] {
   return Array.from(new Set(out));
 }
 
+/**
+ * Find URLs of likely menu images in a page's HTML. These are the images
+ * we'll send to Claude vision when text extraction is empty.
+ */
+function findMenuImageUrls(html: string, baseUrl: string): string[] {
+  if (!html) return [];
+  const found: { url: string; score: number }[] = [];
+
+  const imgRe = /<img\b[^>]*>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = imgRe.exec(html)) !== null) {
+    const tag = m[0];
+    // Get src or data-src
+    const srcMatch =
+      tag.match(/\bdata-image=["']([^"']+)["']/i) ||
+      tag.match(/\bdata-src=["']([^"']+)["']/i) ||
+      tag.match(/\bsrc=["']([^"']+)["']/i);
+    if (!srcMatch) continue;
+    let src = srcMatch[1].trim();
+    if (!src || src.startsWith('data:')) continue;
+
+    let abs: URL;
+    try {
+      abs = new URL(src, baseUrl);
+    } catch {
+      continue;
+    }
+
+    const url = abs.toString().split('?')[0];
+    const path = abs.pathname.toLowerCase();
+    const filename = path.split('/').pop() || '';
+
+    // Exclude non-menu image kinds
+    if (/logo|favicon|icon|avatar|profile|sprite|tracking|pixel/i.test(path)) continue;
+
+    let score = 0;
+
+    // Filename / path hints
+    if (/menu/i.test(path)) score += 5;
+    if (/food|dishes|carte|cuisine/i.test(path)) score += 2;
+
+    // Size hints
+    const wMatch = tag.match(/\bwidth=["']?(\d+)/i);
+    const hMatch = tag.match(/\bheight=["']?(\d+)/i);
+    const dimMatch = tag.match(/\bdata-image-dimensions=["'](\d+)x(\d+)["']/i);
+    const w = wMatch ? parseInt(wMatch[1], 10) : 0;
+    const h = hMatch ? parseInt(hMatch[1], 10) : 0;
+    const dw = dimMatch ? parseInt(dimMatch[1], 10) : 0;
+    const dh = dimMatch ? parseInt(dimMatch[2], 10) : 0;
+
+    if (Math.max(w, h, dw, dh) >= 1500) score += 4;
+    else if (Math.max(w, h, dw, dh) >= 800) score += 2;
+    else if (Math.max(w, h, dw, dh) > 0 && Math.max(w, h, dw, dh) < 300) {
+      // Tiny images are decorations
+      score -= 3;
+    }
+
+    // Tall images are typical of menu boards / printed menus
+    if ((dh > 0 && dh > dw * 1.3) || (h > 0 && h > w * 1.3)) score += 2;
+
+    // Squarespace and WordPress CDN paths are usually content images
+    if (/squarespace-cdn\.com|wp-content\/uploads|cloudinary\.com|imgix\.net/i.test(url))
+      score += 1;
+
+    if (score >= 2) {
+      // For Squarespace, request a large but reasonable size
+      let serveUrl = url;
+      if (/squarespace-cdn\.com/i.test(url)) {
+        serveUrl = url + '?format=2500w';
+      }
+      found.push({ url: serveUrl, score });
+    }
+  }
+
+  // Dedup by base URL, keep highest score
+  const byUrl = new Map<string, number>();
+  for (const f of found) {
+    const cur = byUrl.get(f.url) ?? 0;
+    if (f.score > cur) byUrl.set(f.url, f.score);
+  }
+
+  return Array.from(byUrl.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([u]) => u)
+    .slice(0, 8);
+}
+
 function totalDishes(menu: ExtractedMenu | null | undefined): number {
   if (!menu?.sections) return 0;
   return menu.sections.reduce((n, s) => n + (s.items?.length ?? 0), 0);
@@ -137,11 +223,13 @@ function totalDishes(menu: ExtractedMenu | null | undefined): number {
 
 // POST /api/extract { url, restaurantName? }
 //
-// Strategy: aggressively gather menu content from multiple pages on the
-// restaurant's site, combine them, and send the combined text to Claude
-// for extraction in a single pass. This handles the common case where
-// a restaurant has separate /menu, /banquet, /drinks, /city pages OR a
-// PDF menu OR a Squarespace site that puts the menu on /<location>.
+// Three-stage strategy:
+//   1. Gather candidate URLs (homepage links matching menu patterns + common
+//      paths) and fetch all in parallel via Exa (livecrawl handles SPAs).
+//   2. Send combined text content to Claude for one-shot extraction.
+//   3. If extraction comes back with zero dishes, find menu IMAGES in the
+//      page HTML and send those to Claude vision. Many restaurants (esp.
+//      Squarespace + Korean BBQ + small sushi places) upload menus as JPGs.
 export async function POST(req: NextRequest) {
   try {
     const { url, restaurantName } = await req.json();
@@ -153,25 +241,20 @@ export async function POST(req: NextRequest) {
     const candidates = new Set<string>();
     candidates.add(url);
 
-    // Parse homepage HTML for menu-relevant links
     const homepageHtml = await rawFetch(url);
     if (homepageHtml) {
       for (const link of findMenuLinks(homepageHtml, url)) {
         candidates.add(link);
       }
     }
-
-    // Add common menu URL patterns as fallbacks
     for (const c of commonMenuUrls(url)) {
       candidates.add(c);
     }
 
-    // Cap candidates for cost/latency. Keep the original first.
     const ordered = [url, ...Array.from(candidates).filter((c) => c !== url)];
     const urls = ordered.slice(0, 7);
 
     // ---- Step 2: fetch all candidates in parallel via Exa contents ----
-    // Exa livecrawl handles SPAs and PDFs.
     const fetched = await Promise.allSettled(
       urls.map((u) =>
         exaContents([u], 'always')
@@ -185,53 +268,108 @@ export async function POST(req: NextRequest) {
       .map((r) => r.value)
       .filter((s) => s.content && s.content.length > 200);
 
-    if (sources.length === 0) {
-      return NextResponse.json(
-        {
-          error:
-            "Could not fetch any content from this restaurant's site. The domain may be blocking automated requests.",
-          url,
-          urls_tried: urls.length,
-        },
-        { status: 502 }
-      );
+    let menu: ExtractedMenu | null = null;
+    let dishes = 0;
+    let extractionMethod: 'text' | 'vision' | 'none' = 'none';
+
+    // ---- Step 2a: try text-based extraction if we have content ----
+    if (sources.length > 0) {
+      const perSourceBudget = Math.floor(48000 / Math.max(sources.length, 1));
+      const combined = sources
+        .map((s) => `=== Source: ${s.url} ===\n${s.content.slice(0, perSourceBudget)}`)
+        .join('\n\n');
+
+      const userMsg = [
+        restaurantName ? `Restaurant hint: ${restaurantName}` : '',
+        `Sources fetched: ${sources.length}`,
+        sources.map((s, i) => `  [${i + 1}] ${s.url}`).join('\n'),
+        '',
+        "Combined source content from the restaurant's website (multiple pages concatenated):",
+        '---',
+        combined,
+        '---',
+        '',
+        'Extract EVERY dish you can find across ALL menu sections — à la carte, banquet, set menus, breakfast, lunch, dinner, brunch, drinks, wine, cocktails, dessert. Group by section name as the source uses. If a dish appears in multiple sources, include it once in the most specific section. Comprehensiveness matters.',
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      try {
+        const textMenu = await claudeJSON<ExtractedMenu>({
+          system: EXTRACT_SYSTEM_PROMPT,
+          user: userMsg,
+          maxTokens: 12000,
+        });
+        const textDishes = totalDishes(textMenu);
+        if (textDishes > 0) {
+          menu = textMenu;
+          dishes = textDishes;
+          extractionMethod = 'text';
+        }
+      } catch (e) {
+        console.error('text extraction error', (e as Error).message);
+      }
     }
 
-    // ---- Step 3: combine source text ----
-    // Keep each source under a budget so the combined payload fits in context.
-    const perSourceBudget = Math.floor(48000 / Math.max(sources.length, 1));
-    const combined = sources
-      .map((s) => `=== Source: ${s.url} ===\n${s.content.slice(0, perSourceBudget)}`)
-      .join('\n\n');
+    // ---- Step 3: vision fallback for image-based menus ----
+    if (dishes === 0) {
+      // Collect menu image URLs from all the candidate pages
+      const allHtml: string[] = [];
+      if (homepageHtml) allHtml.push(homepageHtml);
 
-    // ---- Step 4: send combined content to Claude for one-shot extraction ----
-    const userMsg = [
-      restaurantName ? `Restaurant hint: ${restaurantName}` : '',
-      `Sources fetched: ${sources.length}`,
-      sources.map((s, i) => `  [${i + 1}] ${s.url}`).join('\n'),
-      '',
-      "Combined source content from the restaurant's website (multiple pages concatenated):",
-      '---',
-      combined,
-      '---',
-      '',
-      'Extract EVERY dish you can find across ALL menu sections — à la carte, banquet, set menus, breakfast, lunch, dinner, brunch, drinks, wine, cocktails, dessert. Group by section name as the source uses. If a dish appears in multiple sources, include it once in the most specific section. Comprehensiveness matters.',
-    ]
-      .filter(Boolean)
-      .join('\n');
+      // Fetch HTML of the other candidate URLs (in parallel) so we can find images
+      const otherUrls = urls.filter((u) => u !== url).slice(0, 4);
+      const otherHtml = await Promise.allSettled(otherUrls.map((u) => rawFetch(u)));
+      for (const r of otherHtml) {
+        if (r.status === 'fulfilled' && r.value) allHtml.push(r.value);
+      }
 
-    const menu = await claudeJSON<ExtractedMenu>({
-      system: EXTRACT_SYSTEM_PROMPT,
-      user: userMsg,
-      maxTokens: 12000,
-    });
+      const imageUrls = new Set<string>();
+      for (let i = 0; i < allHtml.length; i++) {
+        const html = allHtml[i];
+        const u = i === 0 ? url : otherUrls[i - 1];
+        for (const img of findMenuImageUrls(html, u)) {
+          imageUrls.add(img);
+        }
+      }
 
-    const dishes = totalDishes(menu);
+      const imageList = Array.from(imageUrls).slice(0, 6);
+
+      if (imageList.length > 0) {
+        const visionUserMsg = [
+          restaurantName ? `Restaurant hint: ${restaurantName}` : '',
+          `Source URL: ${url}`,
+          `These are images of the restaurant's menu (${imageList.length} image${imageList.length === 1 ? '' : 's'}).`,
+          '',
+          'Read every dish from every section visible in the images. Many restaurants put their entire menu on a single image, so look carefully at section headings and list every individual dish under each heading. Group dishes by section as the menu does. Apply the same paraphrasing rule: write each dish "note" in your own words, not the menu prose verbatim.',
+        ]
+          .filter(Boolean)
+          .join('\n');
+
+        try {
+          const visionMenu = await claudeJSONWithImages<ExtractedMenu>({
+            system: EXTRACT_SYSTEM_PROMPT,
+            user: visionUserMsg,
+            imageUrls: imageList,
+            maxTokens: 12000,
+          });
+          const visionDishes = totalDishes(visionMenu);
+          if (visionDishes > 0) {
+            menu = visionMenu;
+            dishes = visionDishes;
+            extractionMethod = 'vision';
+          }
+        } catch (e) {
+          console.error('vision extraction error', (e as Error).message);
+        }
+      }
+    }
+
     if (!menu || dishes === 0) {
       return NextResponse.json(
         {
           error:
-            "We fetched the restaurant's site but the extractor found no dishes. The menu may live on a third-party platform we did not try, or the site may render its menu in a format we cannot parse.",
+            "We fetched the restaurant's site but could not identify any menu dishes — neither in the text content nor in any visible menu images. The menu may live on a third-party platform we did not try.",
           url,
           sources_tried: urls.length,
           sources_fetched: sources.length,
@@ -247,7 +385,7 @@ export async function POST(req: NextRequest) {
       extracted_at: new Date().toISOString(),
     };
 
-    // Strip prices defensively (in case the LLM left any)
+    // Strip prices defensively
     for (const section of result.sections ?? []) {
       for (const item of section.items ?? []) {
         delete (item as Record<string, unknown>).price;
@@ -258,8 +396,8 @@ export async function POST(req: NextRequest) {
       menu: result,
       prompt_version: PROMPT_VERSION,
       total_dishes: dishes,
+      extraction_method: extractionMethod,
       sources_used: sources.length,
-      sources: sources.map((s) => s.url),
     });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });

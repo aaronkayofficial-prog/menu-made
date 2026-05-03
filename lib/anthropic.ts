@@ -10,9 +10,22 @@ export function getAnthropic(): Anthropic {
   return _client;
 }
 
+function extractJSON<T>(text: string): T {
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) {
+    throw new Error('Claude returned no JSON: ' + text.slice(0, 200));
+  }
+  try {
+    return JSON.parse(match[0]) as T;
+  } catch (e) {
+    throw new Error(
+      'Failed to parse Claude JSON: ' + (e as Error).message + ' — raw: ' + match[0].slice(0, 200)
+    );
+  }
+}
+
 /**
- * Call Claude with a system prompt + user message and parse JSON from the response.
- * Robust to surrounding prose (extracts the first {...} block).
+ * Call Claude with a system prompt + text user message and parse JSON.
  */
 export async function claudeJSON<T = unknown>(opts: {
   system: string;
@@ -33,16 +46,41 @@ export async function claudeJSON<T = unknown>(opts: {
     .map((b) => b.text)
     .join('\n');
 
-  // Extract first { ... } block in case the LLM wrapped output in prose
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) {
-    throw new Error('Claude returned no JSON: ' + text.slice(0, 200));
-  }
-  try {
-    return JSON.parse(match[0]) as T;
-  } catch (e) {
-    throw new Error(
-      'Failed to parse Claude JSON: ' + (e as Error).message + ' — raw: ' + match[0].slice(0, 200)
-    );
-  }
+  return extractJSON<T>(text);
+}
+
+/**
+ * Call Claude with one or more images alongside a text prompt and parse JSON.
+ * Used for image-based menus (printed menus uploaded as JPGs/PNGs).
+ */
+export async function claudeJSONWithImages<T = unknown>(opts: {
+  system: string;
+  user: string;
+  imageUrls: string[];
+  maxTokens?: number;
+  model?: string;
+}): Promise<T> {
+  const client = getAnthropic();
+  const cappedUrls = opts.imageUrls.slice(0, 8);
+
+  // Build the message content: images first, then the text instruction.
+  const content: Anthropic.ContentBlockParam[] = cappedUrls.map((url) => ({
+    type: 'image' as const,
+    source: { type: 'url' as const, url },
+  }));
+  content.push({ type: 'text' as const, text: opts.user });
+
+  const response = await client.messages.create({
+    model: opts.model ?? 'claude-sonnet-4-5-20250929',
+    max_tokens: opts.maxTokens ?? 8000,
+    system: opts.system,
+    messages: [{ role: 'user', content }],
+  });
+
+  const text = response.content
+    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+    .map((b) => b.text)
+    .join('\n');
+
+  return extractJSON<T>(text);
 }
