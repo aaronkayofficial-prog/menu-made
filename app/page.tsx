@@ -6,6 +6,9 @@ import { useRouter } from 'next/navigation';
 interface SearchResult {
   name: string;
   url: string;
+  hostname?: string;
+  location?: string | null;
+  address?: string | null;
   snippet?: string;
 }
 
@@ -64,7 +67,7 @@ export default function Home() {
         <form className="search" onSubmit={handleSearch}>
           <input
             type="text"
-            placeholder="e.g. Spice Temple Sydney, or Catch NYC"
+            placeholder="e.g. China Doll Sydney, or Cho Dang Gol Katy TX"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             disabled={loading}
@@ -77,7 +80,7 @@ export default function Home() {
 
         <div className="search-suggest">
           <span style={{ marginRight: 4 }}>Try:</span>
-          {['Spice Temple Sydney', 'Catch NYC', 'Pujol Mexico City', 'Le Bernardin New York'].map((q) => (
+          {['Spice Temple Sydney', 'Catch NYC', 'China Doll Sydney', 'Pujol Mexico City'].map((q) => (
             <span
               key={q}
               className="suggest-chip"
@@ -88,6 +91,10 @@ export default function Home() {
               {q}
             </span>
           ))}
+        </div>
+
+        <div style={{ marginTop: 14, fontSize: 12, color: '#8E8170', maxWidth: 620, marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.5 }}>
+          Tip: many restaurants share names. Adding a city (&ldquo;Sydney&rdquo;, &ldquo;NYC&rdquo;, &ldquo;London&rdquo;) helps us find the right one.
         </div>
 
         {error && (
@@ -111,7 +118,7 @@ export default function Home() {
                 borderBottom: '1px solid #E8DFD3',
               }}
             >
-              {results.length} match{results.length === 1 ? '' : 'es'} — click to load the menu
+              {results.length} match{results.length === 1 ? '' : 'es'} — pick the right location
             </div>
             {results.map((r, i) => (
               <a
@@ -123,9 +130,34 @@ export default function Home() {
                 }}
                 href="#"
               >
-                <h4>{r.name}</h4>
-                {r.snippet && <p>{r.snippet}</p>}
-                <div className="url">{r.url}</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+                  <h4 style={{ margin: 0 }}>{r.name}</h4>
+                  {r.location && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        letterSpacing: '.08em',
+                        textTransform: 'uppercase',
+                        color: '#8B2A2A',
+                        background: '#FBE7E2',
+                        padding: '3px 9px',
+                        borderRadius: 999,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {r.location}
+                    </span>
+                  )}
+                </div>
+                {r.address && (
+                  <p style={{ marginTop: 4, fontSize: 13, color: '#3A332B', fontStyle: 'italic' }}>
+                    {r.address}
+                  </p>
+                )}
+                {r.snippet && <p style={{ marginTop: 6 }}>{r.snippet}</p>}
+                <div className="url" style={{ marginTop: 8 }}>
+                  {r.hostname || r.url}
+                </div>
               </a>
             ))}
           </div>
