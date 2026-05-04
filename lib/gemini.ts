@@ -1,7 +1,7 @@
 // MENU MADE — Gemini Flash Image client.
 //
 // Uses the Google AI Studio REST API directly to keep dependencies slim.
-// Default model is gemini-2.5-flash-image-preview ("Nano Banana 2") — Pro-level
+// Default model is gemini-2.5-flash-image ("Nano Banana 2") — Pro-level
 // quality at Flash pricing (~$0.03 per image as of early 2026).
 //
 // Supports text-to-image and image-to-image (when seedImageUrl is provided).
@@ -48,7 +48,7 @@ export async function generateDishImage(opts: {
   seedImageUrl?: string;
   model?: string;
 }): Promise<{ buffer: Buffer; mimeType: string; usedSeed: boolean }> {
-  const model = opts.model ?? 'gemini-2.5-flash-image-preview';
+  const model = opts.model ?? 'gemini-2.5-flash-image';
 
   const parts: GeminiImagePart[] = [];
   let usedSeed = false;
