@@ -116,6 +116,13 @@ function RestaurantInner() {
   const heroImage = images[activeImage] ?? images[0];
   const thumbs = images.slice(0, 6);
 
+  const websiteHref = overview?.website || url;
+  const bookingHref = overview?.booking_url;
+  const isClosedPermanent =
+    overview?.business_status === 'CLOSED_PERMANENTLY';
+  const isClosedTemporary =
+    overview?.business_status === 'CLOSED_TEMPORARILY';
+
   return (
     <div className="wrap">
       <a className="back-link" onClick={() => router.push('/')}>
@@ -177,6 +184,20 @@ function RestaurantInner() {
 
           <h1 className="overview-name">{overview?.name || name}</h1>
 
+          {/* Closure banners */}
+          {isClosedPermanent && (
+            <div className="closure-banner closure-permanent">
+              <strong>Permanently closed.</strong> According to Google, this restaurant
+              is no longer operating.
+            </div>
+          )}
+          {isClosedTemporary && (
+            <div className="closure-banner closure-temporary">
+              <strong>Temporarily closed.</strong> Google reports this restaurant
+              is currently not operating.
+            </div>
+          )}
+
           {overview?.address && (
             <p className="overview-address">{overview.address}</p>
           )}
@@ -189,8 +210,64 @@ function RestaurantInner() {
               <span className="score-num">{overview.rating.score.toFixed(1)}</span>
               <span className="rating-source">
                 on {overview.rating.source}
-                {overview.rating.count ? ` · ${overview.rating.count.toLocaleString()} reviews` : ''}
+                {overview.rating.count
+                  ? ` · ${overview.rating.count.toLocaleString()} reviews`
+                  : ''}
               </span>
+            </div>
+          )}
+
+          {/* MAPS STRIP — regional + street level */}
+          {overview?.regional_map_url && overview?.street_map_url && (
+            <div className="maps-strip">
+              <a
+                href={overview.google_maps_uri || '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="map-tile"
+                aria-label="View region on Google Maps"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={overview.regional_map_url} alt="Regional map" />
+                <span className="map-caption">Region</span>
+              </a>
+              <a
+                href={overview.google_maps_uri || '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="map-tile"
+                aria-label="View street view on Google Maps"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={overview.street_map_url} alt="Street-level map" />
+                <span className="map-caption">Street</span>
+              </a>
+            </div>
+          )}
+
+          {/* ACTION BUTTONS — Visit website + Book a table */}
+          {(websiteHref || bookingHref) && (
+            <div className="action-row">
+              {websiteHref && (
+                <a
+                  href={websiteHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="action-btn action-primary"
+                >
+                  Visit website ↗
+                </a>
+              )}
+              {bookingHref && (
+                <a
+                  href={bookingHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="action-btn action-secondary"
+                >
+                  Book a table ↗
+                </a>
+              )}
             </div>
           )}
 
@@ -220,16 +297,6 @@ function RestaurantInner() {
               <span>
                 <strong>Phone:</strong> {overview.phone}
               </span>
-            )}
-            {(overview?.website || url) && (
-              <a
-                href={overview?.website || url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="ovr-link"
-              >
-                Visit website ↗
-              </a>
             )}
           </div>
         </div>
@@ -564,11 +631,116 @@ function RestaurantInner() {
           font-size: 13px;
           color: #6b5f52;
         }
+        .closure-banner {
+          padding: 12px 16px;
+          border-radius: 10px;
+          font-size: 13.5px;
+          line-height: 1.5;
+          margin: 4px 0 4px;
+        }
+        .closure-banner strong {
+          font-weight: 700;
+        }
+        .closure-permanent {
+          background: #fbe7e2;
+          color: #6b1b1b;
+          border: 1px solid #e5b6ad;
+        }
+        .closure-temporary {
+          background: #fdf5dc;
+          color: #6b531b;
+          border: 1px solid #e8d59e;
+        }
+
+        .maps-strip {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+          margin: 8px 0 4px;
+        }
+        @media (max-width: 480px) {
+          .maps-strip {
+            grid-template-columns: 1fr;
+          }
+        }
+        .map-tile {
+          position: relative;
+          display: block;
+          aspect-ratio: 3 / 2;
+          border-radius: 10px;
+          overflow: hidden;
+          background: #f4ede0;
+          border: 1px solid #e8dfd3;
+          transition: transform 0.15s ease, box-shadow 0.15s ease;
+          text-decoration: none;
+        }
+        .map-tile:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 6px 14px rgba(31, 27, 23, 0.08);
+        }
+        .map-tile :global(img) {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+        .map-caption {
+          position: absolute;
+          bottom: 6px;
+          left: 6px;
+          background: rgba(31, 27, 23, 0.78);
+          color: #fbf8f3;
+          font-size: 10px;
+          font-weight: 600;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          padding: 3px 8px;
+          border-radius: 5px;
+        }
+
+        .action-row {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin: 6px 0 4px;
+        }
+        .action-btn {
+          padding: 10px 16px;
+          border-radius: 10px;
+          font-size: 13.5px;
+          font-weight: 600;
+          text-decoration: none;
+          transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          line-height: 1;
+        }
+        .action-primary {
+          background: #1f1b17;
+          color: #fbf8f3;
+        }
+        .action-primary:hover {
+          background: #3a332b;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 10px rgba(31, 27, 23, 0.15);
+        }
+        .action-secondary {
+          background: #fbe7e2;
+          color: #8b2a2a;
+          border: 1px solid #e5b6ad;
+        }
+        .action-secondary:hover {
+          background: #f8d8d0;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 10px rgba(139, 42, 42, 0.12);
+        }
+
         .overview-description {
           font-size: 15px;
           color: #3a332b;
           line-height: 1.65;
-          margin: 6px 0;
+          margin: 6px 0 6px;
         }
         .loading-text {
           color: #8e8170;
@@ -596,14 +768,6 @@ function RestaurantInner() {
         .overview-meta strong {
           color: #1f1b17;
           font-weight: 600;
-        }
-        .ovr-link {
-          color: #8b2a2a;
-          font-weight: 500;
-          text-decoration: none;
-        }
-        .ovr-link:hover {
-          text-decoration: underline;
         }
 
         .section-divider {
