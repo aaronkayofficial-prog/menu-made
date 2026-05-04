@@ -42,6 +42,7 @@ function RestaurantInner() {
   const [menuError, setMenuError] = useState<string | null>(null);
   const [activeImage, setActiveImage] = useState<number>(0);
   const [imgFailed, setImgFailed] = useState<Set<string>>(new Set());
+  const [dishQuery, setDishQuery] = useState<string>('');
 
   useEffect(() => {
     if (!url) {
@@ -194,7 +195,7 @@ function RestaurantInner() {
           )}
 
           {overviewLoading && !overview && (
-            <p className="overview-description loading-text">Building the overview...</p>
+            <p className="overview-description loading-text">Building the overview…</p>
           )}
 
           {overview?.description && (
@@ -227,7 +228,7 @@ function RestaurantInner() {
                 rel="noopener noreferrer"
                 className="ovr-link"
               >
-                Visit website ↗
+                Visit website →
               </a>
             )}
           </div>
@@ -246,7 +247,7 @@ function RestaurantInner() {
         {menuLoading && (
           <div className="loading">
             <div className="spinner" />
-            <div className="loading-text">Finding the menu for {name || 'this restaurant'}...</div>
+            <div className="loading-text">Finding the menu for {name || 'this restaurant'}…</div>
             <div className="loading-sub">Live web fetch + AI extraction — usually 8–25 seconds.</div>
           </div>
         )}
@@ -290,30 +291,109 @@ function RestaurantInner() {
               </div>
             </div>
 
-            {menu.sections?.map((section, i) => (
-              <div className="menu-section" key={i}>
-                <div className="menu-section-title">{section.name}</div>
-                <div className="dish-list">
-                  {section.items?.map((item, j) => (
-                    <div className="dish-card" key={`${i}-${j}-${item.id}`}>
-                      <div className="dish-name">{item.name}</div>
-                      <div className="dish-note">{item.note}</div>
-                      {item.spicy && (
-                        <div className="dish-tags">
-                          <span className="pill pill-spicy">Listed as spicy</span>
-                        </div>
-                      )}
-                      <div className="dish-cta">
-                        <span className="menu-tag">Menu item · publicly listed</span>
-                        <button className="recreate-btn" onClick={() => pickDish(item)}>
-                          Recreate this dish →
+            {(() => {
+              const totalDishes =
+                menu.sections?.reduce((n, s) => n + (s.items?.length ?? 0), 0) ?? 0;
+              const q = dishQuery.trim().toLowerCase();
+              const filteredSections = !q
+                ? menu.sections ?? []
+                : (menu.sections ?? [])
+                    .map((s) => ({
+                      ...s,
+                      items: (s.items ?? []).filter((item) => {
+                        const hay = `${item.name} ${item.note}`.toLowerCase();
+                        return q.split(/\s+/).every((token) => hay.includes(token));
+                      }),
+                    }))
+                    .filter((s) => (s.items ?? []).length > 0);
+
+              const filteredCount = filteredSections.reduce(
+                (n, s) => n + (s.items?.length ?? 0),
+                0
+              );
+
+              return (
+                <>
+                  <div className="dish-search-wrap">
+                    <div className="dish-search-bar">
+                      <svg
+                        className="dish-search-icon"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        aria-hidden
+                      >
+                        <circle cx="11" cy="11" r="7" />
+                        <path d="m20 20-3.5-3.5" />
+                      </svg>
+                      <input
+                        type="text"
+                        placeholder="Search the dishes — by ingredient (chilli, prawns, lamb) or dish name"
+                        value={dishQuery}
+                        onChange={(e) => setDishQuery(e.target.value)}
+                        aria-label="Search the menu"
+                      />
+                      {dishQuery && (
+                        <button
+                          type="button"
+                          className="dish-search-clear"
+                          onClick={() => setDishQuery('')}
+                          aria-label="Clear search"
+                        >
+                          ×
                         </button>
+                      )}
+                    </div>
+                    <div className="dish-search-count">
+                      {q
+                        ? `Showing ${filteredCount} of ${totalDishes} dishes`
+                        : `${totalDishes} dishes across ${menu.sections?.length ?? 0} section${
+                            (menu.sections?.length ?? 0) === 1 ? '' : 's'
+                          }`}
+                    </div>
+                  </div>
+
+                  {filteredSections.length === 0 && q && (
+                    <div className="error-box" style={{ marginTop: 24 }}>
+                      <h3>No dishes match &ldquo;{dishQuery}&rdquo;</h3>
+                      <p>
+                        Try a different ingredient or shorter search term. Clear the search to see
+                        all {totalDishes} dishes.
+                      </p>
+                    </div>
+                  )}
+
+                  {filteredSections.map((section, i) => (
+                    <div className="menu-section" key={i}>
+                      <div className="menu-section-title">{section.name}</div>
+                      <div className="dish-list">
+                        {section.items?.map((item, j) => (
+                          <div className="dish-card" key={`${i}-${j}-${item.id}`}>
+                            <div className="dish-name">{item.name}</div>
+                            <div className="dish-note">{item.note}</div>
+                            {item.spicy && (
+                              <div className="dish-tags">
+                                <span className="pill pill-spicy">Listed as spicy</span>
+                              </div>
+                            )}
+                            <div className="dish-cta">
+                              <span className="menu-tag">Menu item · publicly listed</span>
+                              <button
+                                className="recreate-btn"
+                                onClick={() => pickDish(item)}
+                              >
+                                Recreate this dish →
+                              </button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   ))}
-                </div>
-              </div>
-            ))}
+                </>
+              );
+            })()}
           </>
         )}
       </div>
@@ -536,6 +616,76 @@ function RestaurantInner() {
         .menu-section-wrap {
           padding-bottom: 60px;
         }
+
+        .dish-search-wrap {
+          margin: 0 0 32px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .dish-search-bar {
+          position: relative;
+          background: #ffffff;
+          border: 1px solid #d5c8b3;
+          border-radius: 14px;
+          display: flex;
+          align-items: center;
+          padding: 0 18px 0 50px;
+          transition: border-color 0.18s ease, box-shadow 0.18s ease;
+        }
+        .dish-search-bar:focus-within {
+          border-color: #1f1b17;
+          box-shadow: 0 0 0 4px rgba(31, 27, 23, 0.06);
+        }
+        .dish-search-icon {
+          position: absolute;
+          left: 18px;
+          top: 50%;
+          transform: translateY(-50%);
+          width: 20px;
+          height: 20px;
+          color: #8e8170;
+          pointer-events: none;
+        }
+        .dish-search-bar input {
+          flex: 1;
+          padding: 16px 0;
+          border: none;
+          outline: none;
+          background: transparent;
+          font-size: 15px;
+          color: #1f1b17;
+          font-family: inherit;
+        }
+        .dish-search-bar input::placeholder {
+          color: #a89b89;
+        }
+        .dish-search-clear {
+          background: #f4ede0;
+          color: #6b5f52;
+          border: none;
+          width: 26px;
+          height: 26px;
+          border-radius: 50%;
+          font-size: 18px;
+          line-height: 1;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          margin-left: 8px;
+        }
+        .dish-search-clear:hover {
+          background: #8b2a2a;
+          color: #fbf8f3;
+        }
+        .dish-search-count {
+          font-size: 12px;
+          letter-spacing: 0.04em;
+          color: #8e8170;
+          padding: 0 6px;
+        }
       `}</style>
     </div>
   );
@@ -547,7 +697,7 @@ export default function RestaurantPage() {
       fallback={
         <div className="loading">
           <div className="spinner" />
-          <div className="loading-text">Loading...</div>
+          <div className="loading-text">Loading…</div>
         </div>
       }
     >
