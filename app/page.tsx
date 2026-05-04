@@ -14,14 +14,15 @@ interface SearchResult {
 
 export default function Home() {
   const router = useRouter();
-  const [query, setQuery] = useState('');
+  const [name, setName] = useState('');
+  const [city, setCity] = useState('');
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSearch(e: FormEvent) {
     e.preventDefault();
-    if (!query.trim()) return;
+    if (!name.trim()) return;
     setLoading(true);
     setError(null);
     setResults(null);
@@ -29,7 +30,10 @@ export default function Home() {
       const r = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: query.trim() }),
+        body: JSON.stringify({
+          name: name.trim(),
+          city: city.trim() || undefined,
+        }),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -49,6 +53,11 @@ export default function Home() {
     router.push(`/restaurant?${params.toString()}`);
   }
 
+  function tryExample(n: string, c: string) {
+    setName(n);
+    setCity(c);
+  }
+
   return (
     <>
       <section className="hero wrap">
@@ -56,45 +65,80 @@ export default function Home() {
           Search any restaurant in the world
         </div>
         <h1>
-          Cook the world&apos;s restaurants <em>at home.</em>
+          Cook the world's restaurants <em>at home.</em>
         </h1>
         <p className="lede">
-          Type a restaurant name and city. We&apos;ll find their menu, then generate an{' '}
+          Type a restaurant name and city. We'll find their menu, then generate an{' '}
           <strong>original home-cookable recreation</strong> of any dish — sized to your guests,
           tailored to your kitchen.
         </p>
 
-        <form className="search" onSubmit={handleSearch}>
-          <input
-            type="text"
-            placeholder="e.g. China Doll Sydney, or Cho Dang Gol Katy TX"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            disabled={loading}
-            autoFocus
-          />
-          <button type="submit" className="search-btn" disabled={loading || !query.trim()}>
-            {loading ? 'Searching…' : 'Search'}
+        <form className="search-pair" onSubmit={handleSearch}>
+          <div className="search-fields">
+            <div className="field">
+              <label htmlFor="name-input">Restaurant name</label>
+              <input
+                id="name-input"
+                type="text"
+                placeholder="e.g. China Doll"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={loading}
+                autoFocus
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="city-input">City</label>
+              <input
+                id="city-input"
+                type="text"
+                placeholder="e.g. Sydney"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                disabled={loading}
+              />
+            </div>
+          </div>
+          <button
+            type="submit"
+            className="search-btn-large"
+            disabled={loading || !name.trim()}
+          >
+            {loading ? 'Searching…' : 'Find the menu'}
           </button>
         </form>
 
         <div className="search-suggest">
           <span style={{ marginRight: 4 }}>Try:</span>
-          {['Spice Temple Sydney', 'Catch NYC', 'China Doll Sydney', 'Pujol Mexico City'].map((q) => (
+          {[
+            { name: 'Spice Temple', city: 'Sydney' },
+            { name: 'Catch', city: 'New York' },
+            { name: 'Pujol', city: 'Mexico City' },
+            { name: 'Cho Dang Gol', city: 'Katy TX' },
+          ].map((q) => (
             <span
-              key={q}
+              key={`${q.name}-${q.city}`}
               className="suggest-chip"
-              onClick={() => {
-                setQuery(q);
-              }}
+              onClick={() => tryExample(q.name, q.city)}
             >
-              {q}
+              {q.name} · {q.city}
             </span>
           ))}
         </div>
 
-        <div style={{ marginTop: 14, fontSize: 12, color: '#8E8170', maxWidth: 620, marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.5 }}>
-          Tip: many restaurants share names. Adding a city (&ldquo;Sydney&rdquo;, &ldquo;NYC&rdquo;, &ldquo;London&rdquo;) helps us find the right one.
+        <div
+          style={{
+            marginTop: 14,
+            fontSize: 12,
+            color: '#8E8170',
+            maxWidth: 620,
+            marginLeft: 'auto',
+            marginRight: 'auto',
+            lineHeight: 1.5,
+          }}
+        >
+          The city helps us pick the right restaurant when several share the name (e.g. there are six
+          "China Doll"s worldwide).
         </div>
 
         {error && (
@@ -118,7 +162,7 @@ export default function Home() {
                 borderBottom: '1px solid #E8DFD3',
               }}
             >
-              {results.length} match{results.length === 1 ? '' : 'es'} — pick the right location
+              {results.length} match{results.length === 1 ? '' : 'es'} — pick the right one
             </div>
             {results.map((r, i) => (
               <a
@@ -166,10 +210,83 @@ export default function Home() {
         {results && results.length === 0 && (
           <div className="error-box" style={{ marginTop: 32 }}>
             <h3>No results found</h3>
-            <p>Try refining the search — include the city, like &ldquo;Spice Temple Sydney&rdquo;.</p>
+            <p>
+              Try a more specific city, or check the spelling. If the restaurant is small or new,
+              its menu may not be indexed by web search yet.
+            </p>
           </div>
         )}
       </section>
+
+      <style jsx>{`
+        .search-pair {
+          max-width: 720px;
+          margin: 0 auto 18px;
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+        .search-fields {
+          display: grid;
+          grid-template-columns: 1.4fr 1fr;
+          gap: 14px;
+        }
+        @media (max-width: 540px) {
+          .search-fields {
+            grid-template-columns: 1fr;
+          }
+        }
+        .field {
+          display: flex;
+          flex-direction: column;
+          gap: 7px;
+          text-align: left;
+        }
+        .field label {
+          font-size: 12px;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          color: #6b5f52;
+          font-weight: 500;
+          padding-left: 6px;
+        }
+        .field input {
+          width: 100%;
+          padding: 18px 22px;
+          border-radius: 14px;
+          border: 1px solid #d5c8b3;
+          background: #ffffff;
+          font-size: 17px;
+          color: #1f1b17;
+          transition: border-color 0.18s ease, box-shadow 0.18s ease;
+        }
+        .field input:focus {
+          outline: none;
+          border-color: #1f1b17;
+          box-shadow: 0 0 0 4px rgba(31, 27, 23, 0.08);
+        }
+        .field input::placeholder {
+          color: #a89b89;
+        }
+        .search-btn-large {
+          background: #1f1b17;
+          color: #fbf8f3;
+          padding: 18px 28px;
+          border-radius: 14px;
+          border: none;
+          font-size: 16px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: background 0.15s ease;
+        }
+        .search-btn-large:hover {
+          background: #8b2a2a;
+        }
+        .search-btn-large:disabled {
+          background: #c9b89f;
+          cursor: not-allowed;
+        }
+      `}</style>
     </>
   );
 }
