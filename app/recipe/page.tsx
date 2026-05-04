@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, Suspense, FormEvent } from 'react';
+import { useState, useEffect, Suspense, FormEvent } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import type { GeneratedRecipe } from '@/lib/schema';
 
@@ -30,6 +30,57 @@ function RecipeInner() {
   const [recipe, setRecipe] = useState<GeneratedRecipe | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Dish image (fetched once on mount, displayed in both customise recap + recipe hero)
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageLoading, setImageLoading] = useState(true);
+
+  useEffect(() => {
+    if (!dish.name || !restaurant.name) {
+      setImageLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const restaurantSlug = (() => {
+      if (restaurantUrl) {
+        try {
+          return new URL(restaurantUrl).hostname.replace(/^www\./, '').replace(/\./g, '-');
+        } catch {
+          // fall through
+        }
+      }
+      return restaurant.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    })();
+
+    fetch('/api/dish-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        restaurantSlug,
+        restaurantName: restaurant.name,
+        dishName: dish.name,
+        dishNote: dish.note,
+        cuisine: restaurant.cuisine,
+        sourceUrl: restaurantUrl,
+      }),
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`status ${r.status}`))))
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.imageUrl) setImageUrl(data.imageUrl);
+      })
+      .catch(() => {
+        // Non-fatal — recipe page works without the image
+      })
+      .finally(() => {
+        if (!cancelled) setImageLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dish.name, restaurant.name, restaurantUrl]);
 
   const eqOptions = [
     'Wok & high-output burner',
@@ -99,6 +150,30 @@ function RecipeInner() {
         >
           ← Adjust settings
         </a>
+
+        {imageUrl && (
+          <div className="recipe-hero-image">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={imageUrl} alt={dish.name} />
+            <style jsx>{`
+              .recipe-hero-image {
+                width: 100%;
+                aspect-ratio: 16 / 10;
+                margin-bottom: 28px;
+                border-radius: 16px;
+                overflow: hidden;
+                background: #f4ede0;
+                border: 1px solid #e8dfd3;
+              }
+              .recipe-hero-image :global(img) {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                display: block;
+              }
+            `}</style>
+          </div>
+        )}
 
         <div className="recipe-hero">
           <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -200,7 +275,7 @@ function RecipeInner() {
         {recipe.plating && (recipe.plating.visual?.length > 0 || recipe.plating.table?.length > 0) && (
           <div className="recipe-section">
             <div className="recipe-section-head">
-              <h2>Plating &amp; service</h2>
+              <h2>Plating & service</h2>
             </div>
             <div className="plating-grid">
               <div className="plating-card">
@@ -258,16 +333,74 @@ function RecipeInner() {
         ← Back to menu
       </a>
 
-      <div className="dish-recap">
-        <div style={{ marginBottom: 14, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span className="pill pill-found">Menu item found</span>
-          <span style={{ fontSize: 13, color: '#6B5F52' }}>
-            at {restaurant.name}
-            {restaurant.city ? `, ${restaurant.city}` : ''}
-          </span>
+      <div className="dish-recap" style={{ display: 'flex', gap: 28, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div className="dish-recap-image">
+          {imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={imageUrl} alt={dish.name} />
+          ) : imageLoading ? (
+            <div className="dish-image-shimmer" />
+          ) : (
+            <div className="dish-image-fallback">
+              <span>{(dish.name[0] || '?').toUpperCase()}</span>
+            </div>
+          )}
         </div>
-        <h1>{dish.name}</h1>
-        {dish.note && <p style={{ fontSize: 15, color: '#3A332B', lineHeight: 1.6 }}>{dish.note}</p>}
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <div style={{ marginBottom: 14, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span className="pill pill-found">Menu item found</span>
+            <span style={{ fontSize: 13, color: '#6B5F52' }}>
+              at {restaurant.name}
+              {restaurant.city ? `, ${restaurant.city}` : ''}
+            </span>
+          </div>
+          <h1>{dish.name}</h1>
+          {dish.note && <p style={{ fontSize: 15, color: '#3A332B', lineHeight: 1.6, marginTop: 10 }}>{dish.note}</p>}
+        </div>
+        <style jsx>{`
+          .dish-recap-image {
+            width: 180px;
+            height: 180px;
+            flex-shrink: 0;
+            border-radius: 14px;
+            overflow: hidden;
+            background: #f4ede0;
+            border: 1px solid #e8dfd3;
+          }
+          @media (max-width: 540px) {
+            .dish-recap-image { width: 100%; height: 220px; }
+          }
+          .dish-recap-image :global(img) {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+          }
+          .dish-image-shimmer {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, #f4ede0 0%, #faf5eb 50%, #f4ede0 100%);
+            background-size: 200% 100%;
+            animation: dish-shimmer 1.5s infinite;
+          }
+          @keyframes dish-shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+          }
+          .dish-image-fallback {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(140deg, #3a1a14, #c44536, #e89a4d);
+            font-family: 'Fraunces', serif;
+            font-style: italic;
+            font-weight: 300;
+            font-size: 84px;
+            color: rgba(255, 255, 255, 0.85);
+          }
+        `}</style>
       </div>
 
       {error && (
