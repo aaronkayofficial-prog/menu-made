@@ -32,6 +32,29 @@ export interface SearchResult {
   snippet?: string;
 }
 
+// Restaurant overview (Google-Maps-style summary card)
+export interface RestaurantRating {
+  score: number;
+  source: string;
+  count?: number;
+}
+
+export interface RestaurantOverview {
+  name: string;
+  address?: string | null;
+  city?: string | null;
+  country?: string | null;
+  cuisine?: string | null;
+  price_range?: string | null;
+  rating?: RestaurantRating | null;
+  description?: string | null;
+  highlights?: string[];
+  chef?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  images?: string[];
+}
+
 // Recipe schema
 
 export interface GlanceCell {
@@ -91,7 +114,7 @@ export interface GeneratedRecipe {
   skill: string;
   style: string;
   total_time: string;
-  hero_line: string;        // "Here is our recreated version of this …"
+  hero_line: string;        // "Here is our recreated version of this ..."
   intro: string;
   disclaimer: string;       // ALWAYS reinjected at serve time
   glance: GlanceCell[];
