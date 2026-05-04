@@ -228,7 +228,7 @@ function RestaurantInner() {
                 rel="noopener noreferrer"
                 className="ovr-link"
               >
-                Visit website →
+                Visit website ↗
               </a>
             )}
           </div>
@@ -265,32 +265,6 @@ function RestaurantInner() {
 
         {menu && (
           <>
-            <div className="menu-banner">
-              <span className="pill pill-found">Menu found</span>
-              <span className="pill pill-warn">Not affiliated</span>
-              <div className="text" style={{ marginTop: 10 }}>
-                <strong>Live-extracted menu.</strong> Items below are publicly listed on{' '}
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ textDecoration: 'underline' }}
-                >
-                  {(() => {
-                    try {
-                      return new URL(url).hostname;
-                    } catch {
-                      return url;
-                    }
-                  })()}
-                </a>{' '}
-                and paraphrased into our own words. Tags reflect publicly listed wording — actual
-                heat, allergens, and contents may vary. Confirm directly with the restaurant. We are
-                not affiliated with, sponsored by, or endorsed by{' '}
-                {overview?.name || menu.restaurant_name}.
-              </div>
-            </div>
-
             {(() => {
               const totalDishes =
                 menu.sections?.reduce((n, s) => n + (s.items?.length ?? 0), 0) ?? 0;
@@ -394,6 +368,34 @@ function RestaurantInner() {
                 </>
               );
             })()}
+
+            <div className="menu-banner-footer">
+              <div className="footer-pills">
+                <span className="pill pill-found">Menu found</span>
+                <span className="pill pill-warn">Not affiliated</span>
+              </div>
+              <div className="text">
+                <strong>Live-extracted menu.</strong> Dishes shown are publicly listed on{' '}
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ textDecoration: 'underline' }}
+                >
+                  {(() => {
+                    try {
+                      return new URL(url).hostname;
+                    } catch {
+                      return url;
+                    }
+                  })()}
+                </a>{' '}
+                and paraphrased into our own words. Tags reflect publicly listed wording — actual
+                heat, allergens, and contents may vary; confirm directly with the restaurant. We
+                are not affiliated with, sponsored by, or endorsed by{' '}
+                {overview?.name || menu.restaurant_name}.
+              </div>
+            </div>
           </>
         )}
       </div>
@@ -685,6 +687,31 @@ function RestaurantInner() {
           letter-spacing: 0.04em;
           color: #8e8170;
           padding: 0 6px;
+        }
+
+        .menu-banner-footer {
+          margin-top: 48px;
+          padding: 24px 28px;
+          background: #f4ede0;
+          border: 1px solid #e8dfd3;
+          border-radius: 14px;
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+        .menu-banner-footer .footer-pills {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .menu-banner-footer .text {
+          font-size: 13px;
+          color: #6b5f52;
+          line-height: 1.6;
+        }
+        .menu-banner-footer .text strong {
+          color: #1f1b17;
+          font-weight: 600;
         }
       `}</style>
     </div>
