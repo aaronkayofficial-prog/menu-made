@@ -13,7 +13,6 @@ interface SearchResult {
   favicon?: string | null;
 }
 
-// Stable colour for placeholder cards based on the restaurant name
 function gradientFor(seed: string): string {
   const palettes = [
     'linear-gradient(140deg, #3a1a14 0%, #7c241c 38%, #c44536 70%, #e89a4d 100%)',
@@ -33,6 +32,8 @@ export default function Home() {
   const router = useRouter();
   const [name, setName] = useState('');
   const [city, setCity] = useState('');
+  const [searchedName, setSearchedName] = useState('');
+  const [searchedCity, setSearchedCity] = useState('');
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +46,8 @@ export default function Home() {
     setError(null);
     setResults(null);
     setImgFailed(new Set());
+    setSearchedName(name.trim());
+    setSearchedCity(city.trim());
     try {
       const r = await fetch('/api/search', {
         method: 'POST',
@@ -84,6 +87,9 @@ export default function Home() {
       return next;
     });
   }
+
+  const primary = results && results.length > 0 ? results[0] : null;
+  const alternates = results && results.length > 1 ? results.slice(1) : [];
 
   return (
     <>
@@ -131,7 +137,7 @@ export default function Home() {
             className="search-btn-large"
             disabled={loading || !name.trim()}
           >
-            {loading ? 'Searching...' : 'Find the menu'}
+            {loading ? 'Searching…' : 'Find the menu'}
           </button>
         </form>
 
@@ -153,20 +159,6 @@ export default function Home() {
           ))}
         </div>
 
-        <div
-          style={{
-            marginTop: 14,
-            fontSize: 12,
-            color: '#8E8170',
-            maxWidth: 620,
-            marginLeft: 'auto',
-            marginRight: 'auto',
-            lineHeight: 1.5,
-          }}
-        >
-          The city helps us pick the right restaurant when several share the name.
-        </div>
-
         {error && (
           <div className="error-box" style={{ marginTop: 32 }}>
             <h3>Search failed</h3>
@@ -175,26 +167,91 @@ export default function Home() {
         )}
       </section>
 
-      {results && results.length > 0 && (
+      {primary && (
+        <section className="wrap" style={{ paddingBottom: alternates.length > 0 ? 24 : 80 }}>
+          <div className="primary-header">
+            <span className="eyebrow">Top match for your search</span>
+            <h2>
+              {searchedName}
+              {searchedCity && (
+                <>
+                  {' '}<span className="primary-city">in {searchedCity}</span>
+                </>
+              )}
+            </h2>
+          </div>
+
+          {(() => {
+            const key = `primary-${primary.url}`;
+            const showImage = primary.image && !imgFailed.has(key);
+            return (
+              <button
+                className="primary-card"
+                onClick={() => selectRestaurant(primary)}
+                type="button"
+              >
+                <div className="primary-card-img">
+                  {showImage ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={primary.image as string}
+                      alt={primary.name}
+                      loading="lazy"
+                      onError={() => markImgFailed(key)}
+                    />
+                  ) : (
+                    <div
+                      className="primary-card-fallback"
+                      style={{
+                        background: gradientFor(primary.name + (primary.location || '')),
+                      }}
+                    >
+                      <span className="primary-card-letter">
+                        {(primary.name[0] || '?').toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div className="primary-card-body">
+                  {primary.location && (
+                    <span className="primary-locale-pill">{primary.location}</span>
+                  )}
+                  <h3 className="primary-card-name">{primary.name}</h3>
+                  <p className="primary-card-address">
+                    {primary.address || primary.location || primary.hostname || ''}
+                  </p>
+                  <div className="primary-cta">
+                    <span>Tap to load the menu</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M5 12h14M13 5l7 7-7 7" /></svg>
+                  </div>
+                </div>
+              </button>
+            );
+          })()}
+        </section>
+      )}
+
+      {alternates.length > 0 && (
         <section className="wrap" style={{ paddingBottom: 80 }}>
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 12,
-              marginBottom: 24,
+              marginBottom: 22,
+              marginTop: 24,
               flexWrap: 'wrap',
             }}
           >
-            <span className="eyebrow">{results.length} match{results.length === 1 ? '' : 'es'}</span>
-            <span style={{ fontSize: 14, color: '#6B5F52' }}>
-              Pick the right restaurant
+            <span className="eyebrow">Other matches</span>
+            <span style={{ fontSize: 13, color: '#8E8170' }}>
+              In case the top match isn&apos;t the one you meant
             </span>
           </div>
 
           <div className="rest-grid">
-            {results.map((r, i) => {
-              const key = `${r.url}-${i}`;
+            {alternates.map((r, i) => {
+              const key = `alt-${r.url}-${i}`;
               const showImage = r.image && !imgFailed.has(key);
               return (
                 <button
@@ -217,12 +274,12 @@ export default function Home() {
                         className="rest-card-fallback"
                         style={{ background: gradientFor(r.name + (r.location || '')) }}
                       >
-                        <span className="rest-card-letter">{(r.name[0] || '?').toUpperCase()}</span>
+                        <span className="rest-card-letter">
+                          {(r.name[0] || '?').toUpperCase()}
+                        </span>
                       </div>
                     )}
-                    {r.location && (
-                      <span className="rest-card-locale">{r.location}</span>
-                    )}
+                    {r.location && <span className="rest-card-locale">{r.location}</span>}
                   </div>
                   <div className="rest-card-body">
                     <h3 className="rest-card-name">{r.name}</h3>
@@ -318,6 +375,133 @@ export default function Home() {
           cursor: not-allowed;
         }
 
+        /* Primary (hero) card */
+        .primary-header {
+          margin-bottom: 24px;
+        }
+        .primary-header h2 {
+          font-family: 'Fraunces', serif;
+          font-size: clamp(34px, 5vw, 56px);
+          font-weight: 400;
+          letter-spacing: -0.02em;
+          line-height: 1.05;
+          color: #1f1b17;
+          margin: 8px 0 0;
+        }
+        .primary-city {
+          font-style: italic;
+          color: #8b2a2a;
+          font-weight: 300;
+        }
+        .primary-card {
+          background: #ffffff;
+          border: 1px solid #e8dfd3;
+          border-radius: 22px;
+          overflow: hidden;
+          cursor: pointer;
+          padding: 0;
+          text-align: left;
+          font-family: inherit;
+          color: inherit;
+          display: grid;
+          grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+          width: 100%;
+          transition: all 0.25s ease;
+        }
+        @media (max-width: 780px) {
+          .primary-card {
+            grid-template-columns: 1fr;
+          }
+        }
+        .primary-card:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 22px 60px -22px rgba(31, 27, 23, 0.22);
+          border-color: #c9b89f;
+        }
+        .primary-card-img {
+          aspect-ratio: 16 / 11;
+          position: relative;
+          overflow: hidden;
+          background: #f4ede0;
+        }
+        @media (max-width: 780px) {
+          .primary-card-img {
+            aspect-ratio: 16 / 9;
+          }
+        }
+        .primary-card-img :global(img) {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+        .primary-card-fallback {
+          width: 100%;
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .primary-card-letter {
+          font-family: 'Fraunces', serif;
+          font-weight: 300;
+          font-size: 140px;
+          color: rgba(255, 255, 255, 0.85);
+          font-style: italic;
+        }
+        .primary-card-body {
+          padding: 36px 38px;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          gap: 14px;
+        }
+        @media (max-width: 780px) {
+          .primary-card-body {
+            padding: 28px 28px 32px;
+          }
+        }
+        .primary-locale-pill {
+          align-self: flex-start;
+          font-size: 11px;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          color: #8b2a2a;
+          background: #fbe7e2;
+          padding: 6px 13px;
+          border-radius: 999px;
+          font-weight: 600;
+        }
+        .primary-card-name {
+          font-family: 'Fraunces', serif;
+          font-size: clamp(28px, 3vw, 38px);
+          font-weight: 500;
+          color: #1f1b17;
+          margin: 0;
+          line-height: 1.15;
+          letter-spacing: -0.01em;
+        }
+        .primary-card-address {
+          font-size: 15px;
+          color: #6b5f52;
+          line-height: 1.5;
+          margin: 0;
+        }
+        .primary-cta {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 6px;
+          font-size: 13px;
+          font-weight: 500;
+          color: #1f1b17;
+          letter-spacing: 0.02em;
+        }
+        .primary-card:hover .primary-cta {
+          color: #8b2a2a;
+        }
+
+        /* Alternate grid */
         .rest-grid {
           display: grid;
           grid-template-columns: repeat(3, 1fr);
@@ -333,7 +517,6 @@ export default function Home() {
             grid-template-columns: 1fr;
           }
         }
-
         .rest-card {
           background: #ffffff;
           border: 1px solid #e8dfd3;
@@ -375,7 +558,7 @@ export default function Home() {
         .rest-card-letter {
           font-family: 'Fraunces', serif;
           font-weight: 300;
-          font-size: 96px;
+          font-size: 84px;
           color: rgba(255, 255, 255, 0.85);
           font-style: italic;
         }
@@ -402,11 +585,11 @@ export default function Home() {
           pointer-events: none;
         }
         .rest-card-body {
-          padding: 20px 22px 24px;
+          padding: 18px 20px 22px;
         }
         .rest-card-name {
           font-family: 'Fraunces', serif;
-          font-size: 22px;
+          font-size: 20px;
           font-weight: 500;
           color: #1f1b17;
           margin: 0 0 6px;
