@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { dishCacheKey, getCachedImageUrl, saveImage, isR2Configured } from '@/lib/image-cache';
+import { dishCacheKey, getCachedImageUrl, saveImage, isBlobConfigured } from '@/lib/image-cache';
 import { generateDishImage } from '@/lib/gemini';
 import { exaSearch } from '@/lib/exa';
 
@@ -150,7 +150,7 @@ export async function POST(req: NextRequest) {
     const key = dishCacheKey(restaurantSlug, dishName);
 
     // ---- Cache check (Tier 0) ----
-    if (isR2Configured()) {
+    if (isBlobConfigured()) {
       const cached = await getCachedImageUrl(key);
       if (cached) {
         return NextResponse.json({
@@ -190,16 +190,16 @@ export async function POST(req: NextRequest) {
       seedImageUrl: seedImage ?? undefined,
     });
 
-    // ---- Save to R2 ----
-    if (!isR2Configured()) {
-      // Fallback: return a data: URL so the image still works without R2
+    // ---- Save to Vercel Blob ----
+    if (!isBlobConfigured()) {
+      // Fallback: return a data: URL so the image still works without a cache
       const dataUrl = `data:${gen.mimeType};base64,${gen.buffer.toString('base64')}`;
       return NextResponse.json({
         imageUrl: dataUrl,
         source: gen.usedSeed ? `ai-${seedSource}-seed` : 'ai-text',
         cached: false,
         cacheKey: key,
-        warning: 'R2 not configured — image not cached, will regenerate next time',
+        warning: 'Blob storage not configured — image not cached, will regenerate next time',
       });
     }
 

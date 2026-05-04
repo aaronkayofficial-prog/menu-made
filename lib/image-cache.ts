@@ -1,59 +1,21 @@
-// MENU MADE — R2 image cache.
+// MENU MADE — Vercel Blob image cache.
 //
-// Uses Cloudflare R2 (S3-compatible) for permanent dish-image storage.
-// aws4fetch is a 3KB library that signs fetch requests with AWS Sig V4.
-// Zero egress fees on R2 means cached images are essentially free to serve.
+// Uses @vercel/blob, which is auto-configured when you add a Blob store to
+// your Vercel project (Storage → Create → Blob). The BLOB_READ_WRITE_TOKEN
+// env var is added automatically; nothing to copy by hand.
+//
+// Flow: dishCacheKey() produces a stable hash → getCachedImageUrl() looks for
+// an existing blob → if missing, saveImage() uploads. The first request for
+// each unique dish pays the generation cost; every request after is free.
 
-import { AwsClient } from 'aws4fetch';
+import { put, list } from '@vercel/blob';
 import { createHash } from 'crypto';
 
-let _aws: AwsClient | null = null;
-
-function aws(): AwsClient {
-  if (_aws) return _aws;
-  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-  if (!accessKeyId || !secretAccessKey) {
-    throw new Error('R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY must be set');
-  }
-  _aws = new AwsClient({
-    accessKeyId,
-    secretAccessKey,
-    service: 's3',
-    region: 'auto',
-  });
-  return _aws;
+export function isBlobConfigured(): boolean {
+  return !!process.env.BLOB_READ_WRITE_TOKEN;
 }
 
-function endpoint(): string {
-  const accountId = process.env.R2_ACCOUNT_ID;
-  if (!accountId) throw new Error('R2_ACCOUNT_ID is not set');
-  return `https://${accountId}.r2.cloudflarestorage.com`;
-}
-
-function bucket(): string {
-  const b = process.env.R2_BUCKET;
-  if (!b) throw new Error('R2_BUCKET is not set');
-  return b;
-}
-
-function publicBase(): string {
-  const u = process.env.R2_PUBLIC_URL;
-  if (!u) throw new Error('R2_PUBLIC_URL is not set (must be the public-access URL of the R2 bucket)');
-  return u.replace(/\/+$/, '');
-}
-
-export function isR2Configured(): boolean {
-  return !!(
-    process.env.R2_ACCOUNT_ID &&
-    process.env.R2_ACCESS_KEY_ID &&
-    process.env.R2_SECRET_ACCESS_KEY &&
-    process.env.R2_BUCKET &&
-    process.env.R2_PUBLIC_URL
-  );
-}
-
-/** Stable cache key for a dish: sha256(restaurantSlug + normalized dish name). */
+/** Stable cache key for a dish: short sha256 of restaurant + normalised dish name. */
 export function dishCacheKey(restaurantSlug: string, dishName: string): string {
   const normalised = dishName
     .toLowerCase()
@@ -64,66 +26,55 @@ export function dishCacheKey(restaurantSlug: string, dishName: string): string {
   return createHash('sha256').update(seed).digest('hex').slice(0, 32);
 }
 
-function objectKey(cacheKey: string, ext: string): string {
-  return `dishes/${cacheKey}.${ext}`;
-}
-
 /**
  * Returns the public URL of a cached image if it exists, or null.
- * Uses a HEAD request — cheap and doesn't transfer the body.
+ * Uses list() with a prefix so we don't have to know which extension the
+ * stored blob uses (.jpg / .png / .webp).
  */
 export async function getCachedImageUrl(cacheKey: string): Promise<string | null> {
-  if (!isR2Configured()) return null;
-  // Try common extensions
-  for (const ext of ['jpg', 'png', 'webp']) {
-    const key = objectKey(cacheKey, ext);
-    const url = `${endpoint()}/${bucket()}/${key}`;
-    try {
-      const r = await aws().fetch(url, { method: 'HEAD' });
-      if (r.ok) {
-        return `${publicBase()}/${key}`;
-      }
-    } catch {
-      // try next extension
+  if (!isBlobConfigured()) return null;
+  try {
+    const { blobs } = await list({ prefix: `dishes/${cacheKey}.` });
+    if (blobs.length > 0) {
+      // Prefer the most recent if multiple
+      const sorted = blobs.sort(
+        (a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
+      );
+      return sorted[0].url;
     }
+  } catch (e) {
+    console.warn('blob cache lookup failed:', (e as Error).message);
   }
   return null;
 }
 
 /**
- * Save an image to R2 and return its public URL.
- * Metadata is stored as x-amz-meta-* headers for audit/debug.
+ * Save an image to Vercel Blob and return its public URL.
+ * Uses a stable path so subsequent calls find the same key.
  */
 export async function saveImage(
   cacheKey: string,
   buffer: Buffer,
   mimeType: string,
-  metadata: Record<string, string> = {}
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _metadata: Record<string, string> = {}
 ): Promise<string> {
-  if (!isR2Configured()) {
-    throw new Error('R2 not configured — cannot save image');
+  if (!isBlobConfigured()) {
+    throw new Error('BLOB_READ_WRITE_TOKEN is not set');
   }
-  const ext = mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg';
-  const key = objectKey(cacheKey, ext);
+  const ext = mimeType.includes('png')
+    ? 'png'
+    : mimeType.includes('webp')
+      ? 'webp'
+      : 'jpg';
+  const path = `dishes/${cacheKey}.${ext}`;
 
-  const headers: Record<string, string> = {
-    'Content-Type': mimeType,
-    'Cache-Control': 'public, max-age=31536000, immutable',
-  };
-  for (const [k, v] of Object.entries(metadata)) {
-    if (v) headers[`x-amz-meta-${k}`] = String(v).slice(0, 256);
-  }
-
-  const url = `${endpoint()}/${bucket()}/${key}`;
-  // aws4fetch wants a Uint8Array body for binary uploads
-  const r = await aws().fetch(url, {
-    method: 'PUT',
-    body: new Uint8Array(buffer),
-    headers,
+  const blob = await put(path, new Uint8Array(buffer), {
+    access: 'public',
+    contentType: mimeType,
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    cacheControlMaxAge: 60 * 60 * 24 * 365, // 1 year client cache
   });
-  if (!r.ok) {
-    const errText = await r.text();
-    throw new Error(`R2 PUT failed (${r.status}): ${errText.slice(0, 500)}`);
-  }
-  return `${publicBase()}/${key}`;
+  return blob.url;
 }
