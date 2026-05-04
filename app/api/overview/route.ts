@@ -3,6 +3,22 @@ import { exaContents, exaSearch } from '@/lib/exa';
 import { claudeJSON } from '@/lib/anthropic';
 import { OVERVIEW_SYSTEM_PROMPT, PROMPT_VERSION } from '@/lib/prompts';
 import { RestaurantOverview } from '@/lib/schema';
+import {
+  isGoogleMapsConfigured,
+  searchPlace,
+  checkBusinessStatus,
+  getStaticMapUrl,
+  bookingUrl,
+  type PlaceDetails,
+} from '@/lib/google-places';
+import {
+  getCachedPlace,
+  isStatusStale,
+  placeCacheKey,
+  refreshStatus,
+  savePlace,
+  type CachedPlace,
+} from '@/lib/places-cache';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -56,6 +72,47 @@ function rankOverviewResults(
     );
 }
 
+/**
+ * Fetch (with two-tier cache) Google Places data for a restaurant.
+ * Tier A: 90-day full cache. Tier B: 7-day business_status refresh.
+ *
+ * If GOOGLE_MAPS_API_KEY is not set, returns null and the route
+ * gracefully degrades to Exa-only (no maps, no Google rating).
+ */
+async function getCachedOrFetchPlace(
+  name: string,
+  city: string
+): Promise<CachedPlace | PlaceDetails | null> {
+  if (!isGoogleMapsConfigured()) return null;
+  const key = placeCacheKey(name, city);
+
+  // Tier A lookup
+  const cached = await getCachedPlace(key);
+  if (cached) {
+    // Tier B: lazy refresh of business_status if stale
+    if (isStatusStale(cached) && cached.placeId) {
+      try {
+        const fresh = await checkBusinessStatus(cached.placeId);
+        return await refreshStatus(key, cached, fresh);
+      } catch (e) {
+        console.warn('status refresh failed:', (e as Error).message);
+        // Keep stale status — better than blocking the user
+      }
+    }
+    return cached;
+  }
+
+  // Cache miss — full fetch + save
+  try {
+    const place = await searchPlace(name, city);
+    if (!place) return null;
+    return await savePlace(key, place);
+  } catch (e) {
+    console.warn('Places searchText failed:', (e as Error).message);
+    return null;
+  }
+}
+
 // POST /api/overview { url, name, city? }
 // Returns: { overview: RestaurantOverview }
 export async function POST(req: NextRequest) {
@@ -75,6 +132,9 @@ export async function POST(req: NextRequest) {
     } catch {
       // ignore
     }
+
+    // Kick off Google Places (cached) and Exa scraping in parallel
+    const placePromise = getCachedOrFetchPlace(name, city);
 
     // Search for the restaurant across the web
     const queries = [
@@ -187,6 +247,56 @@ export async function POST(req: NextRequest) {
     // Attach images
     overview.images = Array.from(imageCandidates).slice(0, 6);
     overview.website = overview.website || url;
+
+    // ---- Merge in Google Places data (if available) ----
+    const place = await placePromise;
+    if (place) {
+      // Google's factual data wins over scraped data
+      if (place.formattedAddress) overview.address = place.formattedAddress;
+      if (place.phoneNumber) overview.phone = place.phoneNumber;
+      if (place.websiteUri) overview.website = place.websiteUri;
+
+      // Google rating replaces scraped rating (user wanted Google reviews specifically)
+      if (typeof place.rating === 'number') {
+        overview.rating = {
+          score: place.rating,
+          source: 'Google',
+          count: place.userRatingCount ?? undefined,
+        };
+      }
+
+      overview.place_id = place.placeId;
+      overview.latitude = place.latitude;
+      overview.longitude = place.longitude;
+      overview.business_status = place.businessStatus;
+      overview.google_maps_uri = place.googleMapsUri;
+
+      // Static maps — only if we have coordinates
+      if (place.latitude != null && place.longitude != null) {
+        overview.regional_map_url = getStaticMapUrl({
+          lat: place.latitude,
+          lng: place.longitude,
+          zoom: 5,
+          width: 600,
+          height: 400,
+          marker: true,
+        });
+        overview.street_map_url = getStaticMapUrl({
+          lat: place.latitude,
+          lng: place.longitude,
+          zoom: 17,
+          width: 600,
+          height: 400,
+          marker: true,
+        });
+      }
+
+      // Booking URL — OpenTable search (works whether or not the restaurant is on it)
+      overview.booking_url = bookingUrl(place.name || name, city);
+    } else if (city || name) {
+      // Even without Places API, give them an OpenTable search link
+      overview.booking_url = bookingUrl(name, city);
+    }
 
     return NextResponse.json({ overview, prompt_version: PROMPT_VERSION });
   } catch (e) {
