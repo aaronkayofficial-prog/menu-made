@@ -16,6 +16,9 @@ export interface ExaSearchResult {
   text?: string;
   summary?: string;
   highlights?: string[];
+  image?: string;
+  favicon?: string;
+  publishedDate?: string;
 }
 
 export async function exaSearch(query: string, numResults = 5): Promise<ExaSearchResult[]> {

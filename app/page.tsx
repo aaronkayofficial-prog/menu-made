@@ -9,7 +9,24 @@ interface SearchResult {
   hostname?: string;
   location?: string | null;
   address?: string | null;
-  snippet?: string;
+  image?: string | null;
+  favicon?: string | null;
+}
+
+// Stable colour for placeholder cards based on the restaurant name
+function gradientFor(seed: string): string {
+  const palettes = [
+    'linear-gradient(140deg, #3a1a14 0%, #7c241c 38%, #c44536 70%, #e89a4d 100%)',
+    'linear-gradient(140deg, #1c2a24 0%, #3d5343 40%, #728e72 70%, #c2cfae 100%)',
+    'linear-gradient(140deg, #3b1f0e 0%, #7c3b0f 35%, #c97a2b 65%, #f0c878 100%)',
+    'linear-gradient(140deg, #1a2638 0%, #2d4458 38%, #618699 70%, #bcc8c8 100%)',
+    'linear-gradient(140deg, #2a1635 0%, #4d2a5a 38%, #8a5e9e 70%, #d6c2e3 100%)',
+    'linear-gradient(140deg, #3a2818 0%, #6b4830 38%, #a87a55 70%, #e8c896 100%)',
+    'linear-gradient(140deg, #1f2a1c 0%, #3d5232 38%, #6b8a52 70%, #b8c89c 100%)',
+  ];
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return palettes[h % palettes.length];
 }
 
 export default function Home() {
@@ -19,6 +36,7 @@ export default function Home() {
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [imgFailed, setImgFailed] = useState<Set<string>>(new Set());
 
   async function handleSearch(e: FormEvent) {
     e.preventDefault();
@@ -26,6 +44,7 @@ export default function Home() {
     setLoading(true);
     setError(null);
     setResults(null);
+    setImgFailed(new Set());
     try {
       const r = await fetch('/api/search', {
         method: 'POST',
@@ -58,6 +77,14 @@ export default function Home() {
     setCity(c);
   }
 
+  function markImgFailed(key: string) {
+    setImgFailed((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+  }
+
   return (
     <>
       <section className="hero wrap">
@@ -65,10 +92,10 @@ export default function Home() {
           Search any restaurant in the world
         </div>
         <h1>
-          Cook the world's restaurants <em>at home.</em>
+          Cook the world&apos;s restaurants <em>at home.</em>
         </h1>
         <p className="lede">
-          Type a restaurant name and city. We'll find their menu, then generate an{' '}
+          Type a restaurant name and city. We&apos;ll find their menu, then generate an{' '}
           <strong>original home-cookable recreation</strong> of any dish — sized to your guests,
           tailored to your kitchen.
         </p>
@@ -104,7 +131,7 @@ export default function Home() {
             className="search-btn-large"
             disabled={loading || !name.trim()}
           >
-            {loading ? 'Searching…' : 'Find the menu'}
+            {loading ? 'Searching...' : 'Find the menu'}
           </button>
         </form>
 
@@ -137,8 +164,7 @@ export default function Home() {
             lineHeight: 1.5,
           }}
         >
-          The city helps us pick the right restaurant when several share the name (e.g. there are six
-          "China Doll"s worldwide).
+          The city helps us pick the right restaurant when several share the name.
         </div>
 
         {error && (
@@ -147,76 +173,81 @@ export default function Home() {
             <p>{error}</p>
           </div>
         )}
+      </section>
 
-        {results && results.length > 0 && (
-          <div className="search-results">
-            <div
-              style={{
-                padding: '12px 20px',
-                fontSize: 12,
-                color: '#8E8170',
-                letterSpacing: '.06em',
-                textTransform: 'uppercase',
-                fontWeight: 500,
-                background: '#F4EDE0',
-                borderBottom: '1px solid #E8DFD3',
-              }}
-            >
-              {results.length} match{results.length === 1 ? '' : 'es'} — pick the right one
-            </div>
-            {results.map((r, i) => (
-              <a
-                key={i}
-                className="search-result"
-                onClick={(e) => {
-                  e.preventDefault();
-                  selectRestaurant(r);
-                }}
-                href="#"
-              >
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-                  <h4 style={{ margin: 0 }}>{r.name}</h4>
-                  {r.location && (
-                    <span
-                      style={{
-                        fontSize: 11,
-                        letterSpacing: '.08em',
-                        textTransform: 'uppercase',
-                        color: '#8B2A2A',
-                        background: '#FBE7E2',
-                        padding: '3px 9px',
-                        borderRadius: 999,
-                        fontWeight: 600,
-                      }}
-                    >
-                      {r.location}
-                    </span>
-                  )}
-                </div>
-                {r.address && (
-                  <p style={{ marginTop: 4, fontSize: 13, color: '#3A332B', fontStyle: 'italic' }}>
-                    {r.address}
-                  </p>
-                )}
-                {r.snippet && <p style={{ marginTop: 6 }}>{r.snippet}</p>}
-                <div className="url" style={{ marginTop: 8 }}>
-                  {r.hostname || r.url}
-                </div>
-              </a>
-            ))}
+      {results && results.length > 0 && (
+        <section className="wrap" style={{ paddingBottom: 80 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              marginBottom: 24,
+              flexWrap: 'wrap',
+            }}
+          >
+            <span className="eyebrow">{results.length} match{results.length === 1 ? '' : 'es'}</span>
+            <span style={{ fontSize: 14, color: '#6B5F52' }}>
+              Pick the right restaurant
+            </span>
           </div>
-        )}
 
-        {results && results.length === 0 && (
+          <div className="rest-grid">
+            {results.map((r, i) => {
+              const key = `${r.url}-${i}`;
+              const showImage = r.image && !imgFailed.has(key);
+              return (
+                <button
+                  key={key}
+                  className="rest-card"
+                  onClick={() => selectRestaurant(r)}
+                  type="button"
+                >
+                  <div className="rest-card-img">
+                    {showImage ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={r.image as string}
+                        alt={r.name}
+                        loading="lazy"
+                        onError={() => markImgFailed(key)}
+                      />
+                    ) : (
+                      <div
+                        className="rest-card-fallback"
+                        style={{ background: gradientFor(r.name + (r.location || '')) }}
+                      >
+                        <span className="rest-card-letter">{(r.name[0] || '?').toUpperCase()}</span>
+                      </div>
+                    )}
+                    {r.location && (
+                      <span className="rest-card-locale">{r.location}</span>
+                    )}
+                  </div>
+                  <div className="rest-card-body">
+                    <h3 className="rest-card-name">{r.name}</h3>
+                    <p className="rest-card-address">
+                      {r.address || r.location || r.hostname || 'Tap to open menu'}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {results && results.length === 0 && (
+        <section className="wrap">
           <div className="error-box" style={{ marginTop: 32 }}>
             <h3>No results found</h3>
             <p>
-              Try a more specific city, or check the spelling. If the restaurant is small or new,
-              its menu may not be indexed by web search yet.
+              Try a different city, or check the spelling. If the restaurant is small or new, its
+              menu may not be indexed yet.
             </p>
           </div>
-        )}
-      </section>
+        </section>
+      )}
 
       <style jsx>{`
         .search-pair {
@@ -285,6 +316,108 @@ export default function Home() {
         .search-btn-large:disabled {
           background: #c9b89f;
           cursor: not-allowed;
+        }
+
+        .rest-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 22px;
+        }
+        @media (max-width: 980px) {
+          .rest-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+        @media (max-width: 600px) {
+          .rest-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        .rest-card {
+          background: #ffffff;
+          border: 1px solid #e8dfd3;
+          border-radius: 18px;
+          overflow: hidden;
+          cursor: pointer;
+          padding: 0;
+          text-align: left;
+          font-family: inherit;
+          color: inherit;
+          transition: all 0.25s ease;
+          display: flex;
+          flex-direction: column;
+        }
+        .rest-card:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 14px 40px -20px rgba(31, 27, 23, 0.18);
+          border-color: #c9b89f;
+        }
+        .rest-card-img {
+          aspect-ratio: 4 / 3;
+          position: relative;
+          overflow: hidden;
+          background: #f4ede0;
+        }
+        .rest-card-img :global(img) {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+        .rest-card-fallback {
+          width: 100%;
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .rest-card-letter {
+          font-family: 'Fraunces', serif;
+          font-weight: 300;
+          font-size: 96px;
+          color: rgba(255, 255, 255, 0.85);
+          font-style: italic;
+        }
+        .rest-card-locale {
+          position: absolute;
+          left: 14px;
+          bottom: 12px;
+          color: #fbf8f3;
+          z-index: 2;
+          font-size: 11px;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          font-weight: 600;
+          background: rgba(31, 27, 23, 0.65);
+          backdrop-filter: blur(6px);
+          padding: 5px 11px;
+          border-radius: 999px;
+        }
+        .rest-card-img::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(180deg, transparent 50%, rgba(31, 27, 23, 0.35));
+          pointer-events: none;
+        }
+        .rest-card-body {
+          padding: 20px 22px 24px;
+        }
+        .rest-card-name {
+          font-family: 'Fraunces', serif;
+          font-size: 22px;
+          font-weight: 500;
+          color: #1f1b17;
+          margin: 0 0 6px;
+          line-height: 1.2;
+          letter-spacing: -0.005em;
+        }
+        .rest-card-address {
+          font-size: 13px;
+          color: #6b5f52;
+          line-height: 1.45;
+          margin: 0;
         }
       `}</style>
     </>

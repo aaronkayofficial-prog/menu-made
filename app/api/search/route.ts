@@ -43,11 +43,13 @@ function detectLocation(text: string): string | null {
   return null;
 }
 
-function extractAddressHint(text: string): string | null {
+function extractAddress(text: string): string | null {
   if (!text) return null;
-  const streetRe = /\b\d{1,5}\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\s+(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Pkwy|Parkway|Wharf|Place|Pl|Lane|Ln|Drive|Dr)\.?\b/;
-  const m = text.match(streetRe);
-  return m ? m[0] : null;
+  // Try a richer pattern first: street + suburb + state/country
+  const richRe = /\b\d{1,5}\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,4}\s+(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Pkwy|Parkway|Wharf|Place|Pl|Lane|Ln|Drive|Dr|Way|Crescent|Cres|Highway|Hwy|Square|Sq)\.?(?:,?\s+[A-Z][a-zA-Z]+){0,3}/;
+  const m = text.match(richRe);
+  if (m) return m[0].trim();
+  return null;
 }
 
 function cleanTitle(title: string | undefined, fallback: string): string {
@@ -57,12 +59,17 @@ function cleanTitle(title: string | undefined, fallback: string): string {
     .replace(/^Menu\s*[-|·]\s*/i, '')
     .replace(/\s*\|\s*Order Online.*$/i, '')
     .replace(/\bRestaurant\b\s*$/i, '')
+    .replace(/\s*[-|·]\s*Home\b\s*$/i, '')
     .trim();
+}
+
+function isLikelyLogoImage(url: string | undefined): boolean {
+  if (!url) return false;
+  return /logo|favicon|cropped-/i.test(url);
 }
 
 // POST /api/search
 //   Body: { name: "China Doll", city?: "Sydney" }
-//     (also accepts legacy { query: "..." } for backward compatibility)
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -73,22 +80,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'name is required' }, { status: 400 });
     }
 
-    // Build the query — both fields included if city is provided.
     const queryParts = [name];
     if (city) queryParts.push(city);
-    queryParts.push('restaurant menu');
+    queryParts.push('restaurant');
     const enrichedQuery = queryParts.join(' ');
 
-    const results = await exaSearch(enrichedQuery, 10);
+    const results = await exaSearch(enrichedQuery, 12);
 
     const cityLower = city.toLowerCase();
-    const cityTokens = cityLower
-      .split(/[\s,]+/)
-      .filter((t) => t.length >= 2);
+    const cityTokens = cityLower.split(/[\s,]+/).filter((t) => t.length >= 2);
     const nameLower = name.toLowerCase();
-    const nameTokens = nameLower
-      .split(/[\s,]+/)
-      .filter((t) => t.length >= 3);
+    const nameTokens = nameLower.split(/[\s,]+/).filter((t) => t.length >= 3);
 
     const ranked = results
       .map((r) => {
@@ -102,34 +104,28 @@ export async function POST(req: NextRequest) {
         })();
         let score = 0;
 
-        // Strong: official menu pages
-        if (/\/menus?\b/i.test(url)) score += 0.4;
-        if (/\.pdf$/i.test(url)) score += 0.4;
-        if (/\/(dinner|lunch|breakfast|brunch)-?menu/i.test(url)) score += 0.35;
+        if (/\/menus?\b/i.test(url)) score += 0.3;
+        if (/\.pdf$/i.test(url)) score += 0.3;
+        if (/\/(dinner|lunch|breakfast|brunch)-?menu/i.test(url)) score += 0.25;
 
-        // Restaurant has its own domain (not a third-party platform)
         if (
           !/ubereats|doordash|deliveroo|grubhub|seamless|opentable|resy|sevenrooms|tock|tripadvisor|yelp|zomato|thefork|google\.com/i.test(
             url
           )
         ) {
-          score += 0.2;
+          score += 0.3;
         }
 
-        // Penalise delivery / reservation / listicle when an own-site option exists
         if (/ubereats|doordash|deliveroo|grubhub|seamless/i.test(url)) score -= 0.2;
         if (/opentable|resy|sevenrooms|tock/i.test(url)) score -= 0.05;
         if (/timeout|eater|infatuation|tripadvisor|yelp/i.test(url)) score -= 0.15;
 
-        // Detect location for the UI / for ranking against the city field
         const allText = `${r.title || ''} ${r.summary || ''} ${r.text || ''}`;
         const allLower = allText.toLowerCase();
         const detectedLocation = detectLocation(allText);
-        const address = extractAddressHint(allText);
+        const address = extractAddress(allText);
 
-        // BIG BOOST when the user-supplied city matches detected location or appears in the result
         if (city) {
-          // Strong: detected location matches user city
           if (
             detectedLocation &&
             (detectedLocation.toLowerCase() === cityLower ||
@@ -138,12 +134,10 @@ export async function POST(req: NextRequest) {
           ) {
             score += 1.0;
           }
-          // Good: city tokens appear in URL hostname (e.g. ".com.au" for Sydney)
           for (const token of cityTokens) {
             if (host.includes(token)) score += 0.4;
             if (allLower.includes(token)) score += 0.2;
           }
-          // Country-domain hints
           if (cityLower.includes('sydney') || cityLower.includes('melbourne') || cityLower.includes('brisbane') || cityLower.includes('perth') || cityLower.includes('adelaide')) {
             if (host.endsWith('.au') || host.endsWith('.com.au')) score += 0.5;
           }
@@ -155,11 +149,13 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Boost when restaurant name tokens appear in URL/title
         for (const token of nameTokens) {
           if (host.includes(token)) score += 0.1;
           if ((r.title || '').toLowerCase().includes(token)) score += 0.05;
         }
+
+        // Boost results that have a real image (not a logo)
+        if (r.image && !isLikelyLogoImage(r.image)) score += 0.1;
 
         return {
           ...r,
@@ -171,13 +167,26 @@ export async function POST(req: NextRequest) {
       })
       .sort((a, b) => b._score - a._score);
 
-    const top = ranked.slice(0, 8).map((r) => ({
+    // Deduplicate by hostname — we want one card per distinct restaurant.
+    // But keep results from third-party platforms separate (one OpenTable
+    // listing per restaurant is fine).
+    const seenHosts = new Set<string>();
+    const deduped: typeof ranked = [];
+    for (const r of ranked) {
+      if (seenHosts.has(r._hostname)) continue;
+      seenHosts.add(r._hostname);
+      deduped.push(r);
+      if (deduped.length >= 10) break;
+    }
+
+    const top = deduped.slice(0, 8).map((r) => ({
       name: cleanTitle(r.title, name),
       url: r.url,
       hostname: r._hostname,
       location: r._location,
       address: r._address,
-      snippet: r.summary?.slice(0, 200),
+      image: r.image && !isLikelyLogoImage(r.image) ? r.image : null,
+      favicon: r.favicon || null,
       score: r._score,
     }));
 
