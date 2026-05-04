@@ -3,6 +3,7 @@
 // Uses @vercel/blob, which is auto-configured when you add a Blob store to
 // your Vercel project (Storage → Create → Blob). The BLOB_READ_WRITE_TOKEN
 // env var is added automatically; nothing to copy by hand.
+// Note: the Blob store must be configured as Public for direct image URLs.
 //
 // Flow: dishCacheKey() produces a stable hash → getCachedImageUrl() looks for
 // an existing blob → if missing, saveImage() uploads. The first request for
