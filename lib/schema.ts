@@ -53,6 +53,15 @@ export interface RestaurantOverview {
   phone?: string | null;
   website?: string | null;
   images?: string[];
+  // Google Places enrichment (optional; populated when GOOGLE_MAPS_API_KEY is set)
+  place_id?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  business_status?: string | null;       // OPERATIONAL | CLOSED_TEMPORARILY | CLOSED_PERMANENTLY
+  google_maps_uri?: string | null;       // Deeplink to the Google Maps page
+  regional_map_url?: string | null;      // Static map at zoom ~5 (country/region)
+  street_map_url?: string | null;        // Static map at zoom ~17 (street level)
+  booking_url?: string | null;           // OpenTable search deeplink
 }
 
 // Recipe schema
@@ -114,7 +123,7 @@ export interface GeneratedRecipe {
   skill: string;
   style: string;
   total_time: string;
-  hero_line: string;        // "Here is our recreated version of this ..."
+  hero_line: string;        // "Here is our recreated version of this …"
   intro: string;
   disclaimer: string;       // ALWAYS reinjected at serve time
   glance: GlanceCell[];
