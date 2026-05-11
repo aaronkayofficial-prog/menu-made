@@ -263,7 +263,24 @@ function RecipeInner() {
                 <div className="method-body">
                   <div className="method-header">
                     <h4>{m.title}</h4>
-                    {m.time && <span className="method-time">{m.time}</span>}
+                    {m.time && (
+                      <span className="method-time">
+                        <svg
+                          className="method-time-icon"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <circle cx="8" cy="8" r="6.25" />
+                          <path d="M8 4.5v3.6l2.4 1.4" />
+                        </svg>
+                        {m.time}
+                      </span>
+                    )}
                   </div>
                   <p>{m.text}</p>
                   {m.tip && (
