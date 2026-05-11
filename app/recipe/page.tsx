@@ -310,7 +310,8 @@ function RecipeInner() {
           </div>
         )}
 
-        {recipe.pairings?.length > 0 && (
+        {/* Pairings hidden for now — data still generated and stored, can be re-enabled by removing this comment */}
+        {/* {recipe.pairings?.length > 0 && (
           <div className="recipe-section">
             <div className="recipe-section-head">
               <h2>Pairings</h2>
@@ -326,7 +327,7 @@ function RecipeInner() {
               ))}
             </div>
           </div>
-        )}
+        )} */}
 
         <div style={{ marginTop: 48, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <button
