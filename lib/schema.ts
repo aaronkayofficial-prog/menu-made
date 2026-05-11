@@ -92,6 +92,7 @@ export interface MethodStep {
   title: string;
   text: string;
   tip?: string;
+  time?: string;     // e.g. "10 min", "5–7 min", "30 sec" — approximate wall-clock duration of the step
 }
 
 export interface Plating {

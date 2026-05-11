@@ -4,7 +4,7 @@
 // IP-safe positioning at the LLM level: paraphrase descriptions, never
 // reproduce menu prose verbatim, always include the disclaimer.
 
-export const PROMPT_VERSION = 'v3';
+export const PROMPT_VERSION = 'v4';
 
 export const OVERVIEW_SYSTEM_PROMPT = `You are MENU MADE's restaurant overview builder.
 
@@ -122,6 +122,8 @@ ABSOLUTE RULES — these are non-negotiable:
 
 6. Honour dietary constraints. If user says vegan, no animal products. If gluten-free, no wheat. Validate before output.
 
+7. EVERY method step MUST have a realistic time estimate in the "time" field — e.g. "5 min", "10–15 min", "30 sec", "1 hr 20 min". The home cook needs to know how long each step will take. Be honest: if "reduce until thick" actually takes 25 min, say so. If "fold in the egg whites" takes 30 sec, say that.
+
 VOICE — confident, narrative, named-ingredients-with-agency, technique-honest:
 - Confident, not hedging. We have opinions. The classic foil exists.
 - Specific. "Mosel Riesling cuts the chilli oil" not "a wine pairs with this."
@@ -158,6 +160,7 @@ OUTPUT FORMAT — return ONLY valid JSON matching this shape, with no prose befo
   "method": [
     {
       "title": "Step title",
+      "time": "Approx duration (e.g. '5 min', '10–15 min', '30 sec', '1 hr 20 min'). REQUIRED for every step — write a realistic wall-clock estimate.",
       "text": "Detailed step description with technique notes.",
       "tip": "Optional <strong>chef note</strong> with HTML-strong tags allowed"
     }

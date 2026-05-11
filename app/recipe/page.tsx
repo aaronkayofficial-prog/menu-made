@@ -185,7 +185,7 @@ function RecipeInner() {
         </div>
 
         <div className="recipe-disclaimer">
-          <h4>This is not the restaurant's recipe.</h4>
+          <h4>This is not the restaurant&apos;s recipe.</h4>
           <p>{recipe.disclaimer}</p>
         </div>
 
@@ -261,7 +261,10 @@ function RecipeInner() {
               <div className="method-step" key={i}>
                 <div className="method-num">{String(i + 1).padStart(2, '0')}</div>
                 <div className="method-body">
-                  <h4>{m.title}</h4>
+                  <div className="method-header">
+                    <h4>{m.title}</h4>
+                    {m.time && <span className="method-time">{m.time}</span>}
+                  </div>
                   <p>{m.text}</p>
                   {m.tip && (
                     <div className="method-tip" dangerouslySetInnerHTML={{ __html: m.tip }} />
@@ -275,7 +278,7 @@ function RecipeInner() {
         {recipe.plating && (recipe.plating.visual?.length > 0 || recipe.plating.table?.length > 0) && (
           <div className="recipe-section">
             <div className="recipe-section-head">
-              <h2>Plating & service</h2>
+              <h2>Plating &amp; service</h2>
             </div>
             <div className="plating-grid">
               <div className="plating-card">
@@ -313,7 +316,7 @@ function RecipeInner() {
             className="btn btn-ghost"
             onClick={() => router.push(`/restaurant?url=${encodeURIComponent(restaurantUrl)}&name=${encodeURIComponent(restaurant.name)}`)}
           >
-            Back to {restaurant.name}'s menu
+            Back to {restaurant.name}&apos;s menu
           </button>
           <button className="btn btn-primary" onClick={() => router.push('/')}>
             Recreate another dish
@@ -412,7 +415,7 @@ function RecipeInner() {
 
       <form onSubmit={handleGenerate}>
         <div className="form-section">
-          <h3>Who's at your table?</h3>
+          <h3>Who&apos;s at your table?</h3>
           <div className="guests-control">
             <button type="button" className="guests-btn" onClick={() => setGuests(Math.max(1, guests - 1))}>−</button>
             <div className="guests-display">{guests}</div>
@@ -459,7 +462,7 @@ function RecipeInner() {
         </div>
 
         <div className="form-section">
-          <h3>What's in your kitchen?</h3>
+          <h3>What&apos;s in your kitchen?</h3>
           <div className="check-group">
             {eqOptions.map((opt) => (
               <div className="check-input" key={opt}>
@@ -485,7 +488,7 @@ function RecipeInner() {
         <div className="generate-bar">
           <div className="text">
             <strong>Before you cook.</strong> What we generate is an original recreation by MENU MADE,
-            inspired by a publicly listed menu reference. Not the restaurant's recipe.
+            inspired by a publicly listed menu reference. Not the restaurant&apos;s recipe.
           </div>
           <button type="submit" className="btn btn-accent" style={{ padding: '16px 30px', fontSize: 15 }}>
             Generate recreation →
