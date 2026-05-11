@@ -266,14 +266,18 @@ h1, h2, h3, h4 { font-family: 'Fraunces', serif; font-weight: 500; letter-spacin
 }
 
 .generate-bar {
-  position: sticky; bottom: 24px; margin-top: 48px;
-  background: rgba(251,248,243,.94); backdrop-filter: blur(10px);
+  margin-top: 48px;
+  background: #FBF8F3;
   border: 1px solid #E8DFD3; border-radius: 18px;
   padding: 22px 28px; display: flex; align-items: center; gap: 24px;
   flex-wrap: wrap;
-  box-shadow: 0 16px 40px -20px rgba(31,27,23,.15);
 }
-.generate-bar .text { flex: 1; min-width: 240px; font-size: 13px; color: #6B5F52; }
+.generate-bar .text { flex: 1; min-width: 240px; font-size: 13px; color: #6B5F52; line-height: 1.5; }
+@media (max-width: 600px) {
+  .generate-bar { flex-direction: column; align-items: stretch; gap: 18px; padding: 22px; }
+  .generate-bar .text { min-width: 0; }
+  .generate-bar button { width: 100%; }
+}
 
 /* Recipe display */
 .recipe-wrap { padding: 32px 0 96px; }
