@@ -158,9 +158,10 @@ function RecipeInner() {
             <style jsx>{`
               .recipe-hero-image {
                 width: 100%;
-                aspect-ratio: 16 / 10;
-                margin-bottom: 28px;
-                border-radius: 16px;
+                max-width: 560px;
+                aspect-ratio: 1 / 1;
+                margin: 0 auto 32px;
+                border-radius: 20px;
                 overflow: hidden;
                 background: #f4ede0;
                 border: 1px solid #e8dfd3;
