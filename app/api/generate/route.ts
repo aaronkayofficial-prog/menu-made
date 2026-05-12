@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { claudeJSON } from '@/lib/anthropic';
 import { RECIPE_SYSTEM_PROMPT, PROMPT_VERSION } from '@/lib/prompts';
 import { GeneratedRecipe, DISCLAIMER, RecipeParams } from '@/lib/schema';
+import { getCachedRecipe, recipeCacheKey, saveRecipe } from '@/lib/recipe-cache';
 
 export const runtime = 'nodejs';
 export const maxDuration = 90;
@@ -22,6 +23,21 @@ export async function POST(req: NextRequest) {
         { error: 'dish, restaurant, and params are required' },
         { status: 400 }
       );
+    }
+
+    // ============ CACHE CHECK ============
+    // Same (dish, restaurant, params) = same recipe. Cache hits skip Claude entirely.
+    const cacheKey = recipeCacheKey(dish, restaurant, params);
+    const cached = await getCachedRecipe(cacheKey);
+    if (cached) {
+      // Defence in depth: re-inject the canonical disclaimer even on cache reads,
+      // in case the cached version was generated under an older disclaimer string.
+      return NextResponse.json({
+        recipe: { ...cached.recipe, disclaimer: DISCLAIMER },
+        prompt_version: cached.prompt_version,
+        cached: true,
+        cache_key: cacheKey,
+      });
     }
 
     const userMsg = [
@@ -68,7 +84,18 @@ export async function POST(req: NextRequest) {
       pairings: (llm as { pairings?: GeneratedRecipe['pairings'] }).pairings ?? [],
     };
 
-    return NextResponse.json({ recipe, prompt_version: PROMPT_VERSION });
+    // Save to cache for the next 90 days
+    await saveRecipe(cacheKey, {
+      recipe,
+      prompt_version: PROMPT_VERSION,
+    });
+
+    return NextResponse.json({
+      recipe,
+      prompt_version: PROMPT_VERSION,
+      cached: false,
+      cache_key: cacheKey,
+    });
   } catch (e) {
     return NextResponse.json(
       { error: (e as Error).message },
