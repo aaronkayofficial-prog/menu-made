@@ -3,6 +3,7 @@ import { exaContents, exaSearch } from '@/lib/exa';
 import { claudeJSON, claudeJSONWithImages } from '@/lib/anthropic';
 import { EXTRACT_SYSTEM_PROMPT, PROMPT_VERSION } from '@/lib/prompts';
 import { ExtractedMenu } from '@/lib/schema';
+import { getCachedMenu, menuCacheKey, saveMenu } from '@/lib/menu-cache';
 
 export const runtime = 'nodejs';
 export const maxDuration = 180;
@@ -282,6 +283,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'url is required' }, { status: 400 });
     }
 
+    // ============ STAGE 0 — cache check ============
+    // Same restaurant URL = same menu. Cache hits skip the entire pipeline below.
+    const cacheKey = menuCacheKey(url);
+    const cached = await getCachedMenu(cacheKey);
+    if (cached) {
+      return NextResponse.json({
+        menu: cached.menu,
+        prompt_version: cached.prompt_version,
+        total_dishes: cached.total_dishes,
+        extraction_method: cached.extraction_method,
+        sources_used: cached.sources_used,
+        own_sources: cached.own_sources,
+        third_party_sources: cached.third_party_sources,
+        original_blocked: cached.original_blocked,
+        cached: true,
+        cache_key: cacheKey,
+      });
+    }
+
     let originalDomain: string | null = null;
     try {
       originalDomain = new URL(url).hostname.replace(/^www\./, '');
@@ -479,6 +499,18 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Save to cache for the next 30 days
+    await saveMenu(cacheKey, {
+      menu: result,
+      prompt_version: PROMPT_VERSION,
+      total_dishes: dishes,
+      extraction_method: extractionMethod,
+      sources_used: sourcesUsed || allSources.length,
+      own_sources: ownSources.length,
+      third_party_sources: thirdPartySources.length,
+      original_blocked: homepageBlocked,
+    });
+
     return NextResponse.json({
       menu: result,
       prompt_version: PROMPT_VERSION,
@@ -488,6 +520,8 @@ export async function POST(req: NextRequest) {
       own_sources: ownSources.length,
       third_party_sources: thirdPartySources.length,
       original_blocked: homepageBlocked,
+      cached: false,
+      cache_key: cacheKey,
     });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
