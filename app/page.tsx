@@ -89,7 +89,8 @@ export default function Home() {
   }
 
   const primary = results && results.length > 0 ? results[0] : null;
-  const alternates = results && results.length > 1 ? results.slice(1) : [];
+  // Show at most 3 alternates (so total = 1 hero + 3 = 4 results)
+  const alternates = results && results.length > 1 ? results.slice(1, 4) : [];
 
   return (
     <>

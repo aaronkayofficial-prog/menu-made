@@ -65,7 +65,14 @@ function cleanTitle(title: string | undefined, fallback: string): string {
 function isLikelyLogoImage(url: string | undefined): boolean {
   if (!url) return false;
   // Logos, favicons, social media icons, sprites, very small thumbnails
-  return /logo|favicon|cropped-.*-32|sprite|icon-?\d|placeholder|avatar|^.*-32x32\./i.test(url);
+  if (/logo|favicon|cropped-.*-32|sprite|icon-?\d|placeholder|avatar|^.*-32x32\./i.test(url)) {
+    return true;
+  }
+  // Static map screenshots (Google Maps, Mapbox, Yelp/Tripadvisor map tiles, etc.)
+  if (/staticmap|maps\.googleapis|maps\.google|map\.openstreetmap|mapbox|\/static\/.*map|\/maps\/|yelp.*\/map|tripadvisor.*\/maps/i.test(url)) {
+    return true;
+  }
+  return false;
 }
 
 function resolveUrl(maybeRelative: string, baseUrl: string): string | null {
