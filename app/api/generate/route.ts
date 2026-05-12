@@ -5,7 +5,7 @@ import { GeneratedRecipe, DISCLAIMER, RecipeParams } from '@/lib/schema';
 import { getCachedRecipe, recipeCacheKey, saveRecipe } from '@/lib/recipe-cache';
 
 export const runtime = 'nodejs';
-export const maxDuration = 90;
+export const maxDuration = 180; // Vercel Pro allows up to 300s; 180s gives prompt caching plenty of headroom
 
 // POST /api/generate { dish, restaurant, params }
 // Returns: GeneratedRecipe (with disclaimer reinjected)

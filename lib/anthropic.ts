@@ -25,7 +25,27 @@ function extractJSON<T>(text: string): T {
 }
 
 /**
+ * Build a cacheable system block. Anthropic prompt caching cuts latency
+ * ~80% on the cached portion AND ~90% cost on cache hits, when the same
+ * system prompt is reused within the cache TTL (5 min ephemeral by default).
+ *
+ * Our system prompts (RECIPE_SYSTEM_PROMPT, EXTRACT_SYSTEM_PROMPT,
+ * OVERVIEW_SYSTEM_PROMPT) are all >1024 tokens — easily above the minimum
+ * cacheable size for claude-sonnet-4-5.
+ */
+function cachedSystemBlock(text: string): Anthropic.TextBlockParam[] {
+  return [
+    {
+      type: 'text',
+      text,
+      cache_control: { type: 'ephemeral' },
+    },
+  ];
+}
+
+/**
  * Call Claude with a system prompt + text user message and parse JSON.
+ * Uses Anthropic prompt caching on the system block.
  */
 export async function claudeJSON<T = unknown>(opts: {
   system: string;
@@ -37,7 +57,7 @@ export async function claudeJSON<T = unknown>(opts: {
   const response = await client.messages.create({
     model: opts.model ?? 'claude-sonnet-4-5-20250929',
     max_tokens: opts.maxTokens ?? 8000,
-    system: opts.system,
+    system: cachedSystemBlock(opts.system),
     messages: [{ role: 'user', content: opts.user }],
   });
 
@@ -73,7 +93,7 @@ export async function claudeJSONWithImages<T = unknown>(opts: {
   const response = await client.messages.create({
     model: opts.model ?? 'claude-sonnet-4-5-20250929',
     max_tokens: opts.maxTokens ?? 8000,
-    system: opts.system,
+    system: cachedSystemBlock(opts.system),
     messages: [{ role: 'user', content }],
   });
 
